@@ -50,6 +50,8 @@ export interface OpenOrderRow {
   direction: "BUY" | "SELL";
   status: string;
   date: string;
+  strategy: string | null;
+  ownershipPrice: number | null;
   marketPrice: number | null;
   eligible: boolean;
   skipReason: string | null;
@@ -86,6 +88,8 @@ export interface PositionsResponse {
     amount: number;
     targetAmount: number;
     lastPrice: number;
+    ownershipPrice: number;
+    strategy: string | null;
     value: number;
     percent: number;
   }>;

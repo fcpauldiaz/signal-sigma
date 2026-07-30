@@ -1,7 +1,11 @@
 import { SignalSigmaApi } from './signalSigmaApi';
-import { resolveQuotePrice, TradierApi } from './tradierApi';
+import { TradierApi } from './tradierApi';
 import { placeOrders } from '../utils/orderPlacer';
-import { PlaceableOrder, SignalSigmaOpenOrder, TradierQuote } from '../types';
+import {
+  buildOwnershipBySymbol,
+  evaluateOpenOrder,
+} from '../utils/openOrderEligibility';
+import { PlaceableOrder } from '../types';
 
 export type OpenOrderExecutionResult = {
   pendingCount: number;
@@ -18,7 +22,17 @@ export async function executeOpenOrders(options: {
 }): Promise<OpenOrderExecutionResult> {
   const { signalSigmaApi, tradierApi, portfolioId } = options;
 
-  const { orders } = await signalSigmaApi.getOpenOrders(portfolioId);
+  const [{ orders }, portfolios] = await Promise.all([
+    signalSigmaApi.getOpenOrders(portfolioId),
+    signalSigmaApi.getPortfolios(),
+  ]);
+
+  const portfolio = portfolios.portfolios.find((p) => p.id === portfolioId);
+  if (!portfolio) {
+    throw new Error(`Portfolio ${portfolioId} not found`);
+  }
+
+  const ownershipBySymbol = buildOwnershipBySymbol(portfolio.tickers);
   const pending = orders.filter((order) => order.status === 'PENDING');
 
   console.log(`Found ${pending.length} pending open order(s)`);
@@ -42,7 +56,7 @@ export async function executeOpenOrders(options: {
   let skippedCount = 0;
 
   for (const order of pending) {
-    const decision = evaluateOrder(order, quotes);
+    const decision = evaluateOpenOrder(order, quotes, ownershipBySymbol);
     if (!decision.place) {
       skippedCount += 1;
       console.log(
@@ -56,12 +70,12 @@ export async function executeOpenOrders(options: {
       symbol: order.symbol,
       side: order.direction === 'BUY' ? 'buy' : 'sell',
       quantity: Math.trunc(order.amount),
-      signalPrice: order.price,
+      signalPrice: decision.ownershipPrice,
     });
   }
 
   if (toPlace.length === 0) {
-    console.log('No eligible orders to place after price checks.');
+    console.log('No eligible orders to place after ownership price checks.');
     return {
       pendingCount: pending.length,
       placedCount: 0,
@@ -93,36 +107,4 @@ export async function executeOpenOrders(options: {
     confirmedCount: successfulIds.length,
     failedCount: placement.failed.length,
   };
-}
-
-function evaluateOrder(
-  order: SignalSigmaOpenOrder,
-  quotes: Map<string, TradierQuote>
-): { place: true } | { place: false; reason: string } {
-  const quantity = Math.trunc(order.amount);
-  if (quantity <= 0) {
-    return { place: false, reason: 'quantity is zero' };
-  }
-
-  if (order.direction === 'SELL') {
-    return { place: true };
-  }
-
-  if (order.direction !== 'BUY') {
-    return { place: false, reason: `unsupported direction ${order.direction}` };
-  }
-
-  const marketPrice = resolveQuotePrice(quotes.get(order.symbol.toUpperCase()));
-  if (marketPrice === null) {
-    return { place: false, reason: 'no Tradier quote available' };
-  }
-
-  if (marketPrice > order.price) {
-    return {
-      place: false,
-      reason: `market ${marketPrice} > signal ${order.price}`,
-    };
-  }
-
-  return { place: true };
 }

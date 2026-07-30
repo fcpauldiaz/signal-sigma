@@ -440,9 +440,11 @@ function PositionsPage({ data }: { data: PositionsResponse }) {
             <thead>
               <tr>
                 <th>Symbol</th>
+                <th>Strategy</th>
                 <th>Shares</th>
                 <th>Target</th>
-                <th>Price</th>
+                <th>Own $</th>
+                <th>Last</th>
                 <th>Value</th>
                 <th>%</th>
               </tr>
@@ -451,8 +453,10 @@ function PositionsPage({ data }: { data: PositionsResponse }) {
               {data.signalPositions.map((t) => (
                 <tr key={t.symbol}>
                   <td>{t.symbol}</td>
+                  <td>{t.strategy || "—"}</td>
                   <td>{t.amount}</td>
                   <td>{t.targetAmount}</td>
+                  <td>{money(t.ownershipPrice)}</td>
                   <td>{money(t.lastPrice)}</td>
                   <td>{money(t.value)}</td>
                   <td>{t.percent?.toFixed?.(1) ?? t.percent}%</td>
@@ -481,7 +485,8 @@ function OrdersPage({
         <p className="workbench-kicker">Open orders</p>
         <h1>Orders</h1>
         <p>
-          Pending Signal Sigma instructions — BUY only when market ≤ limit.
+          Pending Signal Sigma instructions — BUY only when market ≤ strategy
+          ownership price (Millennium Alpha / Momentum).
         </p>
       </header>
 
@@ -500,8 +505,9 @@ function OrdersPage({
             <tr>
               <th>Side</th>
               <th>Symbol</th>
+              <th>Strategy</th>
               <th>Qty</th>
-              <th>SS price</th>
+              <th>Ownership</th>
               <th>Market</th>
               <th>Value</th>
               <th>Ready</th>
@@ -510,7 +516,7 @@ function OrdersPage({
           <tbody>
             {orders.length === 0 ? (
               <tr>
-                <td colSpan={7}>No pending orders.</td>
+                <td colSpan={8}>No pending orders.</td>
               </tr>
             ) : (
               orders.map((o) => (
@@ -519,8 +525,9 @@ function OrdersPage({
                     {o.direction}
                   </td>
                   <td>{o.symbol}</td>
+                  <td>{o.strategy || "—"}</td>
                   <td>{o.amount}</td>
-                  <td>{money(o.price)}</td>
+                  <td>{money(o.ownershipPrice)}</td>
                   <td>{money(o.marketPrice)}</td>
                   <td>{money(o.value)}</td>
                   <td>

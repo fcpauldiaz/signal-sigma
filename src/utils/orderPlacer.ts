@@ -16,7 +16,7 @@ export async function placeOrders(
   for (const order of orders) {
     try {
       console.log(
-        `Placing ${order.side} order for ${order.quantity} shares of ${order.symbol} (signal $${order.signalPrice})...`
+        `Placing ${order.side} order for ${order.quantity} shares of ${order.symbol} (ownership $${order.signalPrice})...`
       );
 
       const orderResponse = await tradierApi.placeOrder({

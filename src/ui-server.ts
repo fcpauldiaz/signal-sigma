@@ -6,9 +6,13 @@ import axios from 'axios';
 import { SignalSigmaAuth } from './services/signalSigmaAuth';
 import { SignalSigmaApi } from './services/signalSigmaApi';
 import { SignalSigmaScraper } from './services/signalSigmaScraper';
-import { TradierApi, resolveQuotePrice } from './services/tradierApi';
+import { TradierApi } from './services/tradierApi';
 import { executeOpenOrders } from './services/openOrderExecutor';
 import { getTradierConfig, TradingMode } from './utils/tradierConfig';
+import {
+  buildOwnershipBySymbol,
+  evaluateOpenOrder,
+} from './utils/openOrderEligibility';
 
 const UI_PORT = parseInt(process.env.UI_PORT || '3000', 10);
 const UI_DIST = path.join(__dirname, '..', 'ui', 'dist');
@@ -238,7 +242,18 @@ async function buildStatus() {
 async function buildOrders() {
   const { auth, signalSigmaApi, tradierApi, portfolioId } = createServices();
   await auth.ensureAuthenticated();
-  const { orders } = await signalSigmaApi.getOpenOrders(portfolioId);
+
+  const [{ orders }, portfolios] = await Promise.all([
+    signalSigmaApi.getOpenOrders(portfolioId),
+    signalSigmaApi.getPortfolios(),
+  ]);
+
+  const portfolio = portfolios.portfolios.find((p) => p.id === portfolioId);
+  if (!portfolio) {
+    throw new Error(`Portfolio ${portfolioId} not found`);
+  }
+
+  const ownershipBySymbol = buildOwnershipBySymbol(portfolio.tickers);
   const pending = orders.filter((o) => o.status === 'PENDING');
   const buySymbols = pending
     .filter((o) => o.direction === 'BUY')
@@ -246,7 +261,10 @@ async function buildOrders() {
 
   let quotesOk = true;
   let quotesMessage = 'ok';
-  let quotes = new Map<string, { last: number | null; bid: number | null; ask: number | null; symbol: string }>();
+  let quotes = new Map<
+    string,
+    { last: number | null; bid: number | null; ask: number | null; symbol: string }
+  >();
 
   try {
     quotes = await tradierApi.getQuotes(buySymbols);
@@ -256,27 +274,14 @@ async function buildOrders() {
   }
 
   const enriched = pending.map((order) => {
-    const marketPrice =
-      order.direction === 'BUY'
-        ? resolveQuotePrice(quotes.get(order.symbol.toUpperCase()))
-        : null;
-    const eligible =
-      order.direction === 'SELL'
-        ? true
-        : marketPrice !== null && marketPrice <= order.price;
-
+    const decision = evaluateOpenOrder(order, quotes, ownershipBySymbol);
     return {
       ...order,
-      marketPrice,
-      eligible,
-      skipReason:
-        order.direction === 'BUY' && !eligible
-          ? marketPrice === null
-            ? quotesOk
-              ? 'no quote'
-              : 'quotes unavailable'
-            : `market ${marketPrice} > signal ${order.price}`
-          : null,
+      strategy: decision.strategy,
+      ownershipPrice: decision.ownershipPrice,
+      marketPrice: decision.marketPrice,
+      eligible: decision.place,
+      skipReason: decision.place ? null : decision.reason,
     };
   });
 
@@ -340,6 +345,8 @@ async function buildPositions() {
       amount: t.amount,
       targetAmount: t.targetAmount,
       lastPrice: t.lastPrice,
+      ownershipPrice: t.ownershipPrice,
+      strategy: t.customGroup || null,
       value: t.value,
       percent: t.percent,
     })),
