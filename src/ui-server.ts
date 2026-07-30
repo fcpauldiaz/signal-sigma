@@ -233,7 +233,9 @@ async function buildStatus() {
     schedules: {
       rebalance: process.env.REBALANCE_SCHEDULE || '0 14 * * 3',
       orders: process.env.ORDER_SCHEDULE || '0 14-20 * * 3',
-      schedulerEnabled: process.env.ENABLE_SCHEDULER === 'true',
+      // Jobs run via Coolify scheduled tasks; in-app node-cron stays off.
+      source: 'coolify',
+      schedulerEnabled: false,
     },
     job: currentJob,
   };

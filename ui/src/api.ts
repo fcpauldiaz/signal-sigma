@@ -35,6 +35,7 @@ export interface StatusResponse {
   schedules: {
     rebalance: string;
     orders: string;
+    source: "coolify" | "in-app";
     schedulerEnabled: boolean;
   };
   job: JobState | null;

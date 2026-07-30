@@ -309,8 +309,8 @@ function OverviewPage({
         <StatusDot ok={status.signalSigma.ok} label="Signal Sigma" />
         <StatusDot ok={status.tradier.ok} label="Tradier" />
         <span>
-          Schedules {status.schedules.schedulerEnabled ? "on" : "off"} ·{" "}
-          {status.schedules.rebalance} / {status.schedules.orders}
+          Coolify cron · rebalance {status.schedules.rebalance} · orders{" "}
+          {status.schedules.orders}
         </span>
       </div>
 
