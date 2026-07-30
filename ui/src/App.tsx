@@ -156,7 +156,8 @@ function StatusPills({ status }: { status: StatusResponse }) {
           Tradier:{" "}
           <span className={`status ${status.tradier.ok ? "connected" : "disconnected"}`}>
             {status.tradier.ok ? "connected" : "error"}
-          </span>
+          </span>{" "}
+          <code>{status.tradingMode || status.tradier.mode || "—"}</code>
         </li>
         <li>Rebalance cron: <code>{status.schedules.rebalance}</code></li>
         <li>Orders cron: <code>{status.schedules.orders}</code></li>
@@ -298,7 +299,7 @@ function DashboardView({
         </div>
         <p className="verify-msg">{portfolio?.id}</p>
         <p className="portfolio-last-run">
-          Tradier {status.tradier.accountId}
+          Tradier {status.tradingMode || status.tradier.mode} · {status.tradier.accountId}
           {status.tradier.totalEquity != null
             ? ` · equity ${money(status.tradier.totalEquity)}`
             : ""}

@@ -10,23 +10,17 @@ export class UnifiedScheduler {
   private orderTask: cron.ScheduledTask | null = null;
   private auth: SignalSigmaAuth;
   private portfolioId: string;
-  private tradierAccessToken: string;
-  private tradierAccountId: string;
   private rebalanceSchedule: string;
   private orderSchedule: string;
 
   constructor(
     auth: SignalSigmaAuth,
     portfolioId: string,
-    tradierAccessToken: string,
-    tradierAccountId: string,
     rebalanceSchedule: string,
     orderSchedule: string
   ) {
     this.auth = auth;
     this.portfolioId = portfolioId;
-    this.tradierAccessToken = tradierAccessToken;
-    this.tradierAccountId = tradierAccountId;
     this.rebalanceSchedule = rebalanceSchedule;
     this.orderSchedule = orderSchedule;
   }
@@ -75,10 +69,7 @@ export class UnifiedScheduler {
       try {
         await this.auth.ensureAuthenticated();
         const signalSigmaApi = new SignalSigmaApi(this.auth);
-        const tradierApi = new TradierApi(
-          this.tradierAccessToken,
-          this.tradierAccountId
-        );
+        const tradierApi = TradierApi.fromEnv();
 
         const result = await executeOpenOrders({
           signalSigmaApi,
@@ -87,7 +78,7 @@ export class UnifiedScheduler {
         });
 
         console.log(
-          `[Scheduled] Done. placed=${result.placedCount} skipped=${result.skippedCount} failed=${result.failedCount} confirmed=${result.confirmedCount}`
+          `[Scheduled] Done (${tradierApi.mode}). placed=${result.placedCount} skipped=${result.skippedCount} failed=${result.failedCount} confirmed=${result.confirmedCount}`
         );
       } catch (error) {
         console.error(

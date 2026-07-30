@@ -4,6 +4,7 @@ import {
   TradierOrderResponse,
   TradierQuote,
 } from '../types';
+import { getTradierConfig, TradierConfig, TradingMode } from '../utils/tradierConfig';
 
 type TradierQuotePayload = {
   symbol?: string;
@@ -13,19 +14,27 @@ type TradierQuotePayload = {
 };
 
 export class TradierApi {
-  private accountId: string;
+  readonly mode: TradingMode;
+  readonly accountId: string;
+  readonly baseUrl: string;
   private client: AxiosInstance;
 
-  constructor(accessToken: string, accountId: string) {
-    this.accountId = accountId;
+  constructor(config: TradierConfig = getTradierConfig()) {
+    this.mode = config.mode;
+    this.accountId = config.accountId;
+    this.baseUrl = config.baseUrl;
     this.client = axios.create({
-      baseURL: 'https://api.tradier.com/v1',
+      baseURL: config.baseUrl,
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${config.accessToken}`,
         Accept: 'application/json',
         'Content-Type': 'application/x-www-form-urlencoded',
       },
     });
+  }
+
+  static fromEnv(): TradierApi {
+    return new TradierApi(getTradierConfig());
   }
 
   async getQuotes(symbols: string[]): Promise<Map<string, TradierQuote>> {
@@ -66,7 +75,7 @@ export class TradierApi {
     } catch (error) {
       if (axios.isAxiosError(error)) {
         throw new Error(
-          `Failed to fetch Tradier quotes: ${error.response?.status} ${error.response?.statusText} - ${JSON.stringify(error.response?.data)}`
+          `Failed to fetch Tradier quotes (${this.mode}): ${error.response?.status} ${error.response?.statusText} - ${JSON.stringify(error.response?.data)}`
         );
       }
       throw error;
@@ -95,7 +104,7 @@ export class TradierApi {
     } catch (error) {
       if (axios.isAxiosError(error)) {
         throw new Error(
-          `Failed to place Tradier order: ${error.response?.status} ${error.response?.statusText} - ${JSON.stringify(error.response?.data)}`
+          `Failed to place Tradier order (${this.mode}): ${error.response?.status} ${error.response?.statusText} - ${JSON.stringify(error.response?.data)}`
         );
       }
       throw error;

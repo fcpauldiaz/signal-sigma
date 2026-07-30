@@ -6,12 +6,5 @@ export function requireEnv(name: string): string {
   return value;
 }
 
-export function requireTradierEnv(): {
-  tradierAccessToken: string;
-  tradierAccountId: string;
-} {
-  return {
-    tradierAccessToken: requireEnv('TRADIER_ACCESS_TOKEN'),
-    tradierAccountId: requireEnv('TRADIER_ACCOUNT_ID'),
-  };
-}
+export { requireTradierEnv, getTradierConfig, resolveTradingMode } from './tradierConfig';
+export type { TradingMode, TradierConfig } from './tradierConfig';

@@ -1,18 +1,16 @@
 import dotenv from 'dotenv';
 import { SignalSigmaAuth } from './services/signalSigmaAuth';
 import { UnifiedScheduler } from './services/scheduler';
-import { requireEnv, requireTradierEnv } from './utils/requireEnv';
+import { requireEnv, getTradierConfig } from './utils/requireEnv';
 
 dotenv.config();
 
 async function main() {
   const signalSigmaPortfolioId = requireEnv('SIGNAL_SIGMA_PORTFOLIO_ID');
-  const { tradierAccessToken, tradierAccountId } = requireTradierEnv();
+  const tradier = getTradierConfig();
   const enableScheduler = process.env.ENABLE_SCHEDULER === 'true';
 
-  // Wednesday 10:00 AM EDT ≈ 14:00 UTC
   const rebalanceSchedule = process.env.REBALANCE_SCHEDULE || '0 14 * * 3';
-  // Wednesday hourly 10:00 AM–4:00 PM EDT ≈ 14:00–20:00 UTC
   const orderSchedule = process.env.ORDER_SCHEDULE || '0 14-20 * * 3';
 
   if (!enableScheduler) {
@@ -21,6 +19,7 @@ async function main() {
   }
 
   console.log('Initializing scheduler...');
+  console.log(`Tradier mode: ${tradier.mode} (${tradier.accountId})`);
   const auth = SignalSigmaAuth.fromEnv();
 
   console.log('Authenticating with Signal Sigma...');
@@ -30,8 +29,6 @@ async function main() {
   const scheduler = new UnifiedScheduler(
     auth,
     signalSigmaPortfolioId,
-    tradierAccessToken,
-    tradierAccountId,
     rebalanceSchedule,
     orderSchedule
   );

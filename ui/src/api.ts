@@ -13,8 +13,10 @@ export interface StatusResponse {
     ok: boolean;
     message: string;
     accountId: string;
+    mode?: "paper" | "live";
     totalEquity?: number | null;
   };
+  tradingMode?: "paper" | "live";
   schedules: {
     rebalance: string;
     orders: string;

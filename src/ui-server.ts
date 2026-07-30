@@ -8,6 +8,7 @@ import { SignalSigmaApi } from './services/signalSigmaApi';
 import { SignalSigmaScraper } from './services/signalSigmaScraper';
 import { TradierApi, resolveQuotePrice } from './services/tradierApi';
 import { executeOpenOrders } from './services/openOrderExecutor';
+import { getTradierConfig, TradingMode } from './utils/tradierConfig';
 
 const UI_PORT = parseInt(process.env.UI_PORT || '3000', 10);
 const UI_DIST = path.join(__dirname, '..', 'ui', 'dist');
@@ -101,36 +102,34 @@ function serveStatic(
 
 function createServices() {
   const portfolioId = process.env.SIGNAL_SIGMA_PORTFOLIO_ID;
-  const tradierAccessToken = process.env.TRADIER_ACCESS_TOKEN;
-  const tradierAccountId = process.env.TRADIER_ACCOUNT_ID;
-
   if (!portfolioId) {
     throw new Error('SIGNAL_SIGMA_PORTFOLIO_ID is required');
   }
-  if (!tradierAccessToken || !tradierAccountId) {
-    throw new Error('TRADIER_ACCESS_TOKEN and TRADIER_ACCOUNT_ID are required');
-  }
 
+  const tradier = getTradierConfig();
   const auth = SignalSigmaAuth.fromEnv();
   const signalSigmaApi = new SignalSigmaApi(auth);
-  const tradierApi = new TradierApi(tradierAccessToken, tradierAccountId);
+  const tradierApi = TradierApi.fromEnv();
 
-  return { auth, signalSigmaApi, tradierApi, portfolioId, tradierAccessToken, tradierAccountId };
+  return { auth, signalSigmaApi, tradierApi, portfolioId, tradier };
 }
 
-async function checkTradier(
-  accessToken: string,
-  accountId: string
-): Promise<{
+async function checkTradier(tradier: {
+  mode: TradingMode;
+  accessToken: string;
+  accountId: string;
+  baseUrl: string;
+}): Promise<{
   ok: boolean;
   message: string;
   accountId: string;
+  mode: TradingMode;
   totalEquity?: number | null;
 }> {
   try {
-    const profile = await axios.get('https://api.tradier.com/v1/user/profile', {
+    const profile = await axios.get(`${tradier.baseUrl}/user/profile`, {
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${tradier.accessToken}`,
         Accept: 'application/json',
       },
     });
@@ -141,16 +140,16 @@ async function checkTradier(
         ? accountsRaw
         : [accountsRaw];
     const match = accounts.some(
-      (a: { account_number?: string }) => a.account_number === accountId
+      (a: { account_number?: string }) => a.account_number === tradier.accountId
     );
 
     let totalEquity: number | null = null;
     try {
       const bal = await axios.get(
-        `https://api.tradier.com/v1/accounts/${accountId}/balances`,
+        `${tradier.baseUrl}/accounts/${tradier.accountId}/balances`,
         {
           headers: {
-            Authorization: `Bearer ${accessToken}`,
+            Authorization: `Bearer ${tradier.accessToken}`,
             Accept: 'application/json',
           },
         }
@@ -166,7 +165,8 @@ async function checkTradier(
     return {
       ok: true,
       message: match ? 'connected' : 'token ok, account id not in profile',
-      accountId,
+      accountId: tradier.accountId,
+      mode: tradier.mode,
       totalEquity,
     };
   } catch (error) {
@@ -174,22 +174,23 @@ async function checkTradier(
       return {
         ok: false,
         message: `${error.response?.status ?? 'error'} ${error.response?.statusText ?? error.message}`,
-        accountId,
+        accountId: tradier.accountId,
+        mode: tradier.mode,
         totalEquity: null,
       };
     }
     return {
       ok: false,
       message: error instanceof Error ? error.message : String(error),
-      accountId,
+      accountId: tradier.accountId,
+      mode: tradier.mode,
       totalEquity: null,
     };
   }
 }
 
 async function buildStatus() {
-  const { auth, signalSigmaApi, portfolioId, tradierAccessToken, tradierAccountId } =
-    createServices();
+  const { auth, signalSigmaApi, portfolioId, tradier } = createServices();
 
   let signalSigma: {
     ok: boolean;
@@ -219,11 +220,12 @@ async function buildStatus() {
     };
   }
 
-  const tradier = await checkTradier(tradierAccessToken, tradierAccountId);
+  const tradierStatus = await checkTradier(tradier);
 
   return {
     signalSigma,
-    tradier,
+    tradier: tradierStatus,
+    tradingMode: tradier.mode,
     schedules: {
       rebalance: process.env.REBALANCE_SCHEDULE || '0 14 * * 3',
       orders: process.env.ORDER_SCHEDULE || '0 14-20 * * 3',
