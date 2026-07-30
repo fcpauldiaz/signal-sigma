@@ -501,48 +501,50 @@ function OrdersPage({
 
       <div className="table-wrap">
         <table className="data">
-          <thead>
-            <tr>
-              <th>Side</th>
-              <th>Symbol</th>
-              <th>Strategy</th>
-              <th>Qty</th>
-              <th>Ownership</th>
-              <th>Market</th>
-              <th>Value</th>
-              <th>Ready</th>
-            </tr>
-          </thead>
-          <tbody>
-            {orders.length === 0 ? (
+            <thead>
               <tr>
-                <td colSpan={8}>No pending orders.</td>
+                <th>Side</th>
+                <th>Symbol</th>
+                <th>Strategy</th>
+                <th>Qty</th>
+                <th>Ownership</th>
+                <th>SS price</th>
+                <th>Market</th>
+                <th>Value</th>
+                <th>Ready</th>
               </tr>
-            ) : (
-              orders.map((o) => (
-                <tr key={o.id}>
-                  <td className={o.direction === "BUY" ? "pos" : "neg"}>
-                    {o.direction}
-                  </td>
-                  <td>{o.symbol}</td>
-                  <td>{o.strategy || "—"}</td>
-                  <td>{o.amount}</td>
-                  <td>{money(o.ownershipPrice)}</td>
-                  <td>{money(o.marketPrice)}</td>
-                  <td>{money(o.value)}</td>
-                  <td>
-                    {o.eligible ? (
-                      <span className="status connected">yes</span>
-                    ) : (
-                      <span className="status warn" title={o.skipReason || ""}>
-                        no
-                      </span>
-                    )}
-                  </td>
+            </thead>
+            <tbody>
+              {orders.length === 0 ? (
+                <tr>
+                  <td colSpan={9}>No pending orders.</td>
                 </tr>
-              ))
-            )}
-          </tbody>
+              ) : (
+                orders.map((o) => (
+                  <tr key={o.id}>
+                    <td className={o.direction === "BUY" ? "pos" : "neg"}>
+                      {o.direction}
+                    </td>
+                    <td>{o.symbol}</td>
+                    <td>{o.strategy || "—"}</td>
+                    <td>{o.amount}</td>
+                    <td>{money(o.ownershipPrice)}</td>
+                    <td>{money(o.price)}</td>
+                    <td>{money(o.marketPrice)}</td>
+                    <td>{money(o.value)}</td>
+                    <td>
+                      {o.eligible ? (
+                        <span className="status connected">yes</span>
+                      ) : (
+                        <span className="status warn" title={o.skipReason || ""}>
+                          no
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
         </table>
       </div>
     </>
