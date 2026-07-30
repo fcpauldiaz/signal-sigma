@@ -313,6 +313,92 @@ async function buildPortfolio() {
   };
 }
 
+async function buildPositions() {
+  const { auth, signalSigmaApi, tradierApi, portfolioId, tradier } =
+    createServices();
+  await auth.ensureAuthenticated();
+
+  const [brokerPositions, balances, portfolios, openOrders] = await Promise.all([
+    tradierApi.getPositions(),
+    tradierApi.getBalances(),
+    signalSigmaApi.getPortfolios(),
+    signalSigmaApi.getOpenOrders(portfolioId),
+  ]);
+
+  const portfolio = portfolios.portfolios.find((p) => p.id === portfolioId);
+  const signalTickers = portfolio?.tickers ?? [];
+  const pendingOrders = openOrders.orders.filter((o) => o.status === 'PENDING');
+
+  return {
+    mode: tradier.mode,
+    accountId: tradier.accountId,
+    balances,
+    brokerPositions,
+    signalPositions: signalTickers.map((t) => ({
+      symbol: t.symbol,
+      name: t.name,
+      amount: t.amount,
+      targetAmount: t.targetAmount,
+      lastPrice: t.lastPrice,
+      value: t.value,
+      percent: t.percent,
+    })),
+    pendingOrderCount: pendingOrders.length,
+    signalPortfolioValue: signalTickers.reduce((sum, t) => sum + (t.value || 0), 0),
+  };
+}
+
+async function buildPerformance() {
+  const { tradierApi, tradier } = createServices();
+  const [closed, balances] = await Promise.all([
+    tradierApi.getGainLoss(100),
+    tradierApi.getBalances(),
+  ]);
+
+  const sorted = closed
+    .slice()
+    .sort((a, b) => a.closeDate.localeCompare(b.closeDate));
+
+  const monthlyMap = new Map<string, number>();
+  let cumulative = 0;
+  const cumulativeSeries: Array<{ date: string; cumulative: number; gainLoss: number }> =
+    [];
+
+  for (const trade of sorted) {
+    const month = trade.closeDate.slice(0, 7);
+    monthlyMap.set(month, (monthlyMap.get(month) || 0) + trade.gainLoss);
+    cumulative += trade.gainLoss;
+    cumulativeSeries.push({
+      date: trade.closeDate.slice(0, 10),
+      cumulative,
+      gainLoss: trade.gainLoss,
+    });
+  }
+
+  const monthly = [...monthlyMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([month, gainLoss]) => ({ month, gainLoss }));
+
+  const winners = sorted.filter((t) => t.gainLoss > 0).length;
+  const losers = sorted.filter((t) => t.gainLoss < 0).length;
+
+  return {
+    mode: tradier.mode,
+    accountId: tradier.accountId,
+    balances,
+    totals: {
+      realizedPl: cumulative,
+      tradeCount: sorted.length,
+      winners,
+      losers,
+      winRate: sorted.length ? winners / sorted.length : 0,
+    },
+    monthly,
+    cumulativeSeries,
+    recentClosed: sorted.slice().reverse().slice(0, 25),
+  };
+}
+
 async function runJob(kind: JobKind): Promise<JobState> {
   if (currentJob?.status === 'running') {
     throw new Error(`Job already running: ${currentJob.kind}`);
@@ -415,6 +501,16 @@ export function startUiServer(): http.Server {
 
       if (pathname === '/api/portfolio' && req.method === 'GET') {
         sendJson(res, 200, await buildPortfolio());
+        return;
+      }
+
+      if (pathname === '/api/positions' && req.method === 'GET') {
+        sendJson(res, 200, await buildPositions());
+        return;
+      }
+
+      if (pathname === '/api/performance' && req.method === 'GET') {
+        sendJson(res, 200, await buildPerformance());
         return;
       }
 

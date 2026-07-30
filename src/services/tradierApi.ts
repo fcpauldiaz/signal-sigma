@@ -1,7 +1,10 @@
 import axios, { AxiosInstance } from 'axios';
 import {
+  TradierBalances,
+  TradierClosedPosition,
   TradierOrderRequest,
   TradierOrderResponse,
+  TradierPosition,
   TradierQuote,
 } from '../types';
 import { getTradierConfig, TradierConfig, TradingMode } from '../utils/tradierConfig';
@@ -105,6 +108,126 @@ export class TradierApi {
       if (axios.isAxiosError(error)) {
         throw new Error(
           `Failed to place Tradier order (${this.mode}): ${error.response?.status} ${error.response?.statusText} - ${JSON.stringify(error.response?.data)}`
+        );
+      }
+      throw error;
+    }
+  }
+
+  async getBalances(): Promise<TradierBalances> {
+    try {
+      const response = await this.client.get<{
+        balances?: Record<string, number | string | null>;
+      }>(`/accounts/${this.accountId}/balances`);
+      const b = response.data.balances || {};
+      return {
+        totalEquity: toNumber(b.total_equity),
+        totalCash: toNumber(b.total_cash),
+        marketValue: toNumber(b.market_value),
+        openPl: toNumber(b.open_pl),
+        closePl: toNumber(b.close_pl),
+        pendingOrdersCount: toNumber(b.pending_orders_count),
+      };
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        throw new Error(
+          `Failed to fetch Tradier balances (${this.mode}): ${error.response?.status} ${error.response?.statusText}`
+        );
+      }
+      throw error;
+    }
+  }
+
+  async getPositions(): Promise<TradierPosition[]> {
+    try {
+      const response = await this.client.get<{
+        positions?:
+          | 'null'
+          | {
+              position?:
+                | {
+                    symbol?: string;
+                    quantity?: number | string;
+                    cost_basis?: number | string;
+                    date_acquired?: string;
+                  }
+                | Array<{
+                    symbol?: string;
+                    quantity?: number | string;
+                    cost_basis?: number | string;
+                    date_acquired?: string;
+                  }>;
+            };
+      }>(`/accounts/${this.accountId}/positions`);
+
+      const raw = response.data.positions;
+      if (!raw || raw === 'null') {
+        return [];
+      }
+      const list = !raw.position
+        ? []
+        : Array.isArray(raw.position)
+          ? raw.position
+          : [raw.position];
+
+      return list
+        .filter((p) => p.symbol)
+        .map((p) => ({
+          symbol: String(p.symbol).toUpperCase(),
+          quantity: toNumber(p.quantity) ?? 0,
+          costBasis: toNumber(p.cost_basis) ?? 0,
+          dateAcquired: p.date_acquired || null,
+        }));
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        throw new Error(
+          `Failed to fetch Tradier positions (${this.mode}): ${error.response?.status} ${error.response?.statusText}`
+        );
+      }
+      throw error;
+    }
+  }
+
+  async getGainLoss(limit = 100): Promise<TradierClosedPosition[]> {
+    try {
+      const response = await this.client.get<{
+        gainloss?:
+          | 'null'
+          | {
+              closed_position?:
+                | Record<string, unknown>
+                | Array<Record<string, unknown>>;
+            };
+      }>(`/accounts/${this.accountId}/gainloss`, {
+        params: { page: 1, limit },
+      });
+
+      const raw = response.data.gainloss;
+      if (!raw || raw === 'null') {
+        return [];
+      }
+      const list = !raw.closed_position
+        ? []
+        : Array.isArray(raw.closed_position)
+          ? raw.closed_position
+          : [raw.closed_position];
+
+      return list.map((p) => ({
+        symbol: String(p.symbol || ''),
+        quantity: toNumber(p.quantity as number | string | null) ?? 0,
+        cost: toNumber(p.cost as number | string | null) ?? 0,
+        proceeds: toNumber(p.proceeds as number | string | null) ?? 0,
+        gainLoss: toNumber(p.gain_loss as number | string | null) ?? 0,
+        gainLossPercent:
+          toNumber(p.gain_loss_percent as number | string | null) ?? 0,
+        openDate: String(p.open_date || ''),
+        closeDate: String(p.close_date || ''),
+        term: toNumber(p.term as number | string | null) ?? 0,
+      }));
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        throw new Error(
+          `Failed to fetch Tradier gain/loss (${this.mode}): ${error.response?.status} ${error.response?.statusText}`
         );
       }
       throw error;

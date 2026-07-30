@@ -135,6 +135,34 @@ export interface TradierQuote {
   ask: number | null;
 }
 
+export interface TradierPosition {
+  symbol: string;
+  quantity: number;
+  costBasis: number;
+  dateAcquired: string | null;
+}
+
+export interface TradierClosedPosition {
+  symbol: string;
+  quantity: number;
+  cost: number;
+  proceeds: number;
+  gainLoss: number;
+  gainLossPercent: number;
+  openDate: string;
+  closeDate: string;
+  term: number;
+}
+
+export interface TradierBalances {
+  totalEquity: number | null;
+  totalCash: number | null;
+  marketValue: number | null;
+  openPl: number | null;
+  closePl: number | null;
+  pendingOrdersCount: number | null;
+}
+
 export interface PlaceableOrder {
   signalSigmaOrderId: string;
   symbol: string;

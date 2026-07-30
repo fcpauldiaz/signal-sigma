@@ -3,6 +3,21 @@ export interface AuthStatus {
   authenticated: boolean;
 }
 
+export interface JobState {
+  kind: string;
+  status: "running" | "success" | "error";
+  startedAt: string;
+  finishedAt?: string;
+  message?: string;
+  result?: {
+    pendingCount?: number;
+    placedCount?: number;
+    skippedCount?: number;
+    confirmedCount?: number;
+    failedCount?: number;
+  };
+}
+
 export interface StatusResponse {
   signalSigma: {
     ok: boolean;
@@ -23,21 +38,6 @@ export interface StatusResponse {
     schedulerEnabled: boolean;
   };
   job: JobState | null;
-}
-
-export interface JobState {
-  kind: string;
-  status: "running" | "success" | "error";
-  startedAt: string;
-  finishedAt?: string;
-  message?: string;
-  result?: {
-    pendingCount?: number;
-    placedCount?: number;
-    skippedCount?: number;
-    confirmedCount?: number;
-    failedCount?: number;
-  };
 }
 
 export interface OpenOrderRow {
@@ -63,11 +63,24 @@ export interface OrdersResponse {
   quotesMessage: string;
 }
 
-export interface PortfolioResponse {
-  id: string;
-  title: string;
-  displayCurrency: string;
-  tickers: Array<{
+export interface PositionsResponse {
+  mode: "paper" | "live";
+  accountId: string;
+  balances: {
+    totalEquity: number | null;
+    totalCash: number | null;
+    marketValue: number | null;
+    openPl: number | null;
+    closePl: number | null;
+    pendingOrdersCount: number | null;
+  };
+  brokerPositions: Array<{
+    symbol: string;
+    quantity: number;
+    costBasis: number;
+    dateAcquired: string | null;
+  }>;
+  signalPositions: Array<{
     symbol: string;
     name: string;
     amount: number;
@@ -75,6 +88,33 @@ export interface PortfolioResponse {
     lastPrice: number;
     value: number;
     percent: number;
+  }>;
+  pendingOrderCount: number;
+  signalPortfolioValue: number;
+}
+
+export interface PerformanceResponse {
+  mode: "paper" | "live";
+  accountId: string;
+  balances: PositionsResponse["balances"];
+  totals: {
+    realizedPl: number;
+    tradeCount: number;
+    winners: number;
+    losers: number;
+    winRate: number;
+  };
+  monthly: Array<{ month: string; gainLoss: number }>;
+  cumulativeSeries: Array<{ date: string; cumulative: number; gainLoss: number }>;
+  recentClosed: Array<{
+    symbol: string;
+    quantity: number;
+    cost: number;
+    proceeds: number;
+    gainLoss: number;
+    gainLossPercent: number;
+    openDate: string;
+    closeDate: string;
   }>;
 }
 
@@ -136,27 +176,27 @@ export async function fetchOrders(): Promise<OrdersResponse> {
   return r.json();
 }
 
-export async function fetchPortfolio(): Promise<PortfolioResponse> {
-  const r = await fetch("/api/portfolio", { headers: authHeaders() });
+export async function fetchPositions(): Promise<PositionsResponse> {
+  const r = await fetch("/api/positions", { headers: authHeaders() });
+  if (!r.ok) throw new Error(await parseError(r));
+  return r.json();
+}
+
+export async function fetchPerformance(): Promise<PerformanceResponse> {
+  const r = await fetch("/api/performance", { headers: authHeaders() });
   if (!r.ok) throw new Error(await parseError(r));
   return r.json();
 }
 
 export async function runRebalance(): Promise<{ job: JobState }> {
-  const r = await fetch("/api/rebalance", {
-    method: "POST",
-    headers: authHeaders(),
-  });
+  const r = await fetch("/api/rebalance", { method: "POST", headers: authHeaders() });
   const data = await r.json();
   if (!r.ok) throw new Error(data.error || data.job?.message || r.statusText);
   return data;
 }
 
 export async function runPlaceOrders(): Promise<{ job: JobState }> {
-  const r = await fetch("/api/place-orders", {
-    method: "POST",
-    headers: authHeaders(),
-  });
+  const r = await fetch("/api/place-orders", { method: "POST", headers: authHeaders() });
   const data = await r.json();
   if (!r.ok) throw new Error(data.error || data.job?.message || r.statusText);
   return data;
