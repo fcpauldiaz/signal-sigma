@@ -12,6 +12,7 @@ import { getTradierConfig, TradingMode } from './utils/tradierConfig';
 import {
   buildOwnershipBySymbol,
   evaluateOpenOrder,
+  getConfiguredStrategyIds,
 } from './utils/openOrderEligibility';
 
 const UI_PORT = parseInt(process.env.UI_PORT || '3000', 10);
@@ -245,9 +246,10 @@ async function buildOrders() {
   const { auth, signalSigmaApi, tradierApi, portfolioId } = createServices();
   await auth.ensureAuthenticated();
 
-  const [{ orders }, portfolios] = await Promise.all([
+  const [{ orders }, portfolios, strategyBooks] = await Promise.all([
     signalSigmaApi.getOpenOrders(portfolioId),
     signalSigmaApi.getPortfolios(),
+    signalSigmaApi.getStrategyPositionBooks(getConfiguredStrategyIds()),
   ]);
 
   const portfolio = portfolios.portfolios.find((p) => p.id === portfolioId);
@@ -255,7 +257,10 @@ async function buildOrders() {
     throw new Error(`Portfolio ${portfolioId} not found`);
   }
 
-  const ownershipBySymbol = buildOwnershipBySymbol(portfolio.tickers);
+  const ownershipBySymbol = buildOwnershipBySymbol(
+    portfolio.tickers,
+    strategyBooks
+  );
   const pending = orders.filter((o) => o.status === 'PENDING');
   const buySymbols = pending
     .filter((o) => o.direction === 'BUY')
@@ -325,33 +330,39 @@ async function buildPositions() {
     createServices();
   await auth.ensureAuthenticated();
 
-  const [brokerPositions, balances, portfolios, openOrders] = await Promise.all([
-    tradierApi.getPositions(),
-    tradierApi.getBalances(),
-    signalSigmaApi.getPortfolios(),
-    signalSigmaApi.getOpenOrders(portfolioId),
-  ]);
+  const [brokerPositions, balances, portfolios, openOrders, strategyBooks] =
+    await Promise.all([
+      tradierApi.getPositions(),
+      tradierApi.getBalances(),
+      signalSigmaApi.getPortfolios(),
+      signalSigmaApi.getOpenOrders(portfolioId),
+      signalSigmaApi.getStrategyPositionBooks(getConfiguredStrategyIds()),
+    ]);
 
   const portfolio = portfolios.portfolios.find((p) => p.id === portfolioId);
   const signalTickers = portfolio?.tickers ?? [];
   const pendingOrders = openOrders.orders.filter((o) => o.status === 'PENDING');
+  const ownershipBySymbol = buildOwnershipBySymbol(signalTickers, strategyBooks);
 
   return {
     mode: tradier.mode,
     accountId: tradier.accountId,
     balances,
     brokerPositions,
-    signalPositions: signalTickers.map((t) => ({
-      symbol: t.symbol,
-      name: t.name,
-      amount: t.amount,
-      targetAmount: t.targetAmount,
-      lastPrice: t.lastPrice,
-      ownershipPrice: t.ownershipPrice,
-      strategy: t.customGroup || null,
-      value: t.value,
-      percent: t.percent,
-    })),
+    signalPositions: signalTickers.map((t) => {
+      const ownership = ownershipBySymbol.get(t.symbol.toUpperCase());
+      return {
+        symbol: t.symbol,
+        name: t.name,
+        amount: t.amount,
+        targetAmount: t.targetAmount,
+        lastPrice: t.lastPrice,
+        ownershipPrice: ownership?.ownershipPrice ?? t.ownershipPrice,
+        strategy: ownership?.strategy || t.customGroup || null,
+        value: t.value,
+        percent: t.percent,
+      };
+    }),
     pendingOrderCount: pendingOrders.length,
     signalPortfolioValue: signalTickers.reduce((sum, t) => sum + (t.value || 0), 0),
   };

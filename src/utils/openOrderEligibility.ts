@@ -4,6 +4,7 @@ import {
   TradierQuote,
 } from '../types';
 import { resolveQuotePrice } from '../services/tradierApi';
+import type { StrategyPositionBook } from '../services/signalSigmaApi';
 
 export type OwnershipLookup = {
   ownershipPrice: number;
@@ -27,20 +28,90 @@ export type OrderDecision =
       marketPrice: number | null;
     };
 
+const DEFAULT_STRATEGY_IDS = [
+  'f835ece6-e41a-4d8a-ac3f-c5468088149a', // Millennium Alpha
+  '5e3f1ff3-5bdb-4bcf-8baf-e69652056e3d', // Momentum
+];
+
+export function getConfiguredStrategyIds(): string[] {
+  const raw = process.env.SIGNAL_SIGMA_STRATEGY_IDS?.trim();
+  if (!raw) {
+    return DEFAULT_STRATEGY_IDS;
+  }
+  return raw
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+}
+
 export function buildOwnershipBySymbol(
-  tickers: Ticker[]
+  portfolioTickers: Ticker[],
+  strategyBooks: StrategyPositionBook[]
 ): Map<string, OwnershipLookup> {
   const map = new Map<string, OwnershipLookup>();
-  for (const ticker of tickers) {
+
+  const strategyByTitle = new Map<string, StrategyPositionBook>();
+  for (const book of strategyBooks) {
+    strategyByTitle.set(normalizeStrategyName(book.title), book);
+  }
+
+  for (const ticker of portfolioTickers) {
     const symbol = ticker.symbol.toUpperCase();
+    const group = ticker.customGroup?.trim() || '';
+    if (!group || group.toLowerCase() === 'cash') {
+      continue;
+    }
+
+    const book =
+      strategyByTitle.get(normalizeStrategyName(group)) ||
+      findBookContainingSymbol(strategyBooks, symbol);
+
+    const strategyTicker = book?.tickers.find(
+      (t) => t.symbol.toUpperCase() === symbol
+    );
+
+    if (!strategyTicker || !(strategyTicker.ownershipPrice > 0)) {
+      continue;
+    }
+
     map.set(symbol, {
-      ownershipPrice: ticker.ownershipPrice,
-      strategy: ticker.customGroup || '—',
+      ownershipPrice: strategyTicker.ownershipPrice,
+      strategy: book?.title || group,
       orderPrice: ticker.lastPrice,
-      lastPrice: ticker.lastPrice,
+      lastPrice: strategyTicker.lastPrice,
     });
   }
+
+  // Cover symbols present in strategies but missing/unmatched on the portfolio row.
+  for (const book of strategyBooks) {
+    for (const strategyTicker of book.tickers) {
+      const symbol = strategyTicker.symbol.toUpperCase();
+      if (map.has(symbol) || !(strategyTicker.ownershipPrice > 0)) {
+        continue;
+      }
+      map.set(symbol, {
+        ownershipPrice: strategyTicker.ownershipPrice,
+        strategy: book.title,
+        orderPrice: strategyTicker.lastPrice,
+        lastPrice: strategyTicker.lastPrice,
+      });
+    }
+  }
+
   return map;
+}
+
+function normalizeStrategyName(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function findBookContainingSymbol(
+  books: StrategyPositionBook[],
+  symbol: string
+): StrategyPositionBook | undefined {
+  return books.find((book) =>
+    book.tickers.some((t) => t.symbol.toUpperCase() === symbol)
+  );
 }
 
 export function evaluateOpenOrder(
@@ -83,7 +154,7 @@ export function evaluateOpenOrder(
   if (!position) {
     return {
       place: false,
-      reason: 'no portfolio position / ownership price',
+      reason: 'no strategy ownership price',
       ownershipPrice: null,
       strategy: null,
       marketPrice: null,

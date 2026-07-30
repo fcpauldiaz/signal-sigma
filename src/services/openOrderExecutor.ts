@@ -4,6 +4,7 @@ import { placeOrders } from '../utils/orderPlacer';
 import {
   buildOwnershipBySymbol,
   evaluateOpenOrder,
+  getConfiguredStrategyIds,
 } from '../utils/openOrderEligibility';
 import { PlaceableOrder } from '../types';
 
@@ -22,9 +23,10 @@ export async function executeOpenOrders(options: {
 }): Promise<OpenOrderExecutionResult> {
   const { signalSigmaApi, tradierApi, portfolioId } = options;
 
-  const [{ orders }, portfolios] = await Promise.all([
+  const [{ orders }, portfolios, strategyBooks] = await Promise.all([
     signalSigmaApi.getOpenOrders(portfolioId),
     signalSigmaApi.getPortfolios(),
+    signalSigmaApi.getStrategyPositionBooks(getConfiguredStrategyIds()),
   ]);
 
   const portfolio = portfolios.portfolios.find((p) => p.id === portfolioId);
@@ -32,10 +34,18 @@ export async function executeOpenOrders(options: {
     throw new Error(`Portfolio ${portfolioId} not found`);
   }
 
-  const ownershipBySymbol = buildOwnershipBySymbol(portfolio.tickers);
+  const ownershipBySymbol = buildOwnershipBySymbol(
+    portfolio.tickers,
+    strategyBooks
+  );
   const pending = orders.filter((order) => order.status === 'PENDING');
 
   console.log(`Found ${pending.length} pending open order(s)`);
+  console.log(
+    `Strategy ownership books: ${strategyBooks
+      .map((b) => `${b.title}(${b.tickers.length})`)
+      .join(', ')}`
+  );
 
   if (pending.length === 0) {
     return {

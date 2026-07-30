@@ -163,6 +163,30 @@ export interface TradierBalances {
   pendingOrdersCount: number | null;
 }
 
+export interface StrategySummary {
+  id: string;
+  slug: string;
+  title: string;
+  chartInterval: string;
+  isOwner: boolean;
+  status: string;
+}
+
+export interface StrategyApiEnvelope {
+  message?: string;
+  data?: {
+    strategy?: StrategySummary;
+  };
+}
+
+export interface StrategyTableApiEnvelope {
+  message?: string;
+  data?: {
+    columns?: unknown[];
+    tickers?: Ticker[];
+  };
+}
+
 export interface PlaceableOrder {
   signalSigmaOrderId: string;
   symbol: string;

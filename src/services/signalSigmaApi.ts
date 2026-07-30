@@ -4,8 +4,18 @@ import {
   OpenOrdersResponse,
   PortfolioApiEnvelope,
   PortfolioResponse,
+  StrategyApiEnvelope,
+  StrategySummary,
+  StrategyTableApiEnvelope,
+  Ticker,
 } from '../types';
 import { SignalSigmaAuth } from './signalSigmaAuth';
+
+export type StrategyPositionBook = {
+  id: string;
+  title: string;
+  tickers: Ticker[];
+};
 
 export class SignalSigmaApi {
   private auth: SignalSigmaAuth;
@@ -105,6 +115,75 @@ export class SignalSigmaApi {
       }
       throw error;
     }
+  }
+
+  async getStrategy(strategyId: string): Promise<StrategySummary> {
+    try {
+      return await this.withAuthRetry(async () => {
+        const headers = await this.getAuthHeaders();
+        const response = await this.client.get<StrategyApiEnvelope>(
+          `/api/strategy/${strategyId}`,
+          { headers }
+        );
+        const strategy = response.data.data?.strategy;
+        if (!strategy) {
+          throw new Error('Invalid strategy response: strategy not found');
+        }
+        return strategy;
+      });
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        throw new Error(
+          `Failed to fetch strategy ${strategyId}: ${error.response?.status} ${error.response?.statusText}`
+        );
+      }
+      throw error;
+    }
+  }
+
+  async getStrategyTable(
+    strategyId: string,
+    tableType = 'OVERVIEW'
+  ): Promise<Ticker[]> {
+    try {
+      return await this.withAuthRetry(async () => {
+        const headers = await this.getAuthHeaders();
+        // Frontend passes empty snapshotDate for live strategy books.
+        const response = await this.client.get<StrategyTableApiEnvelope>(
+          `/api/strategy/${strategyId}/table`,
+          {
+            headers,
+            params: { tableType, snapshotDate: '' },
+          }
+        );
+        return response.data.data?.tickers ?? [];
+      });
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        throw new Error(
+          `Failed to fetch strategy table ${strategyId}: ${error.response?.status} ${error.response?.statusText}`
+        );
+      }
+      throw error;
+    }
+  }
+
+  async getStrategyPositionBooks(
+    strategyIds: string[]
+  ): Promise<StrategyPositionBook[]> {
+    const books: StrategyPositionBook[] = [];
+    for (const strategyId of strategyIds) {
+      const [strategy, tickers] = await Promise.all([
+        this.getStrategy(strategyId),
+        this.getStrategyTable(strategyId, 'OVERVIEW'),
+      ]);
+      books.push({
+        id: strategy.id,
+        title: strategy.title,
+        tickers: tickers.filter((t) => t.systemClassification !== 'cash'),
+      });
+    }
+    return books;
   }
 
   async executeOrders(portfolioId: string, orderIds: string[]): Promise<void> {
