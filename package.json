@@ -1,0 +1,40 @@
+{
+  "name": "signal-sigma-tradier-automation",
+  "version": "1.0.0",
+  "description": "Automated order placement to Tradier broker based on Signal Sigma portfolio data",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "build:ui": "cd ui && pnpm install && pnpm run build",
+    "build:all": "pnpm run build:ui && pnpm run build",
+    "start": "node dist/serve.js",
+    "serve": "ts-node src/serve.ts",
+    "dev": "ts-node src/index.ts",
+    "watch": "tsc --watch",
+    "rebalance": "ts-node src/rebalance.ts",
+    "rebalance-only": "ts-node src/rebalanceOnly.ts",
+    "place-orders": "ts-node src/placeOrders.ts",
+    "scheduler": "ts-node src/scheduler.ts",
+    "auth": "ts-node src/authCheck.ts"
+  },
+  "keywords": [
+    "trading",
+    "tradier",
+    "signal-sigma",
+    "automation"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.1",
+    "playwright": "^1.40.0",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  },
+  "packageManager": "pnpm@10.26.1+sha512.664074abc367d2c9324fdc18037097ce0a8f126034160f709928e9e9f95d98714347044e5c3164d65bd5da6c59c6be362b107546292a8eecb7999196e5ce58fa"
+}

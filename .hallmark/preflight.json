@@ -1,0 +1,10 @@
+{
+  "scannedAt": "2026-07-30",
+  "fontStack": ["Space Grotesk", "Inter Tight", "JetBrains Mono"],
+  "palette": "OKLCH dark blue-gray + cyan accent (ui/src/index.css :root)",
+  "motion": "none (CSS transitions only)",
+  "spacing": "CSS --space-* 4pt-ish scale",
+  "framework": "Vite + React 18 + TanStack Query",
+  "preserve": ["routes (#/dashboard|#/orders|#/portfolio)", "api.ts contract", "ui-server endpoints"],
+  "introduce": ["Hallmark macrostructure", "theme rotation away from EquiAlgo clone", "token discipline"]
+}
