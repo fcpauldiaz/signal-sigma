@@ -1,0 +1,14 @@
+{
+  "stamps": [
+    {
+      "at": "2026-07-30T21:07:00Z",
+      "macrostructure": "Workbench",
+      "tone": "technical",
+      "theme": "Terminal",
+      "audience": "creator",
+      "use": "performance tracking, monitor positions and orders, charts",
+      "anchorHue": 145,
+      "notes": "Phosphor on near-black; IBM Plex; Overview/Positions/Orders/Performance"
+    }
+  ]
+}
