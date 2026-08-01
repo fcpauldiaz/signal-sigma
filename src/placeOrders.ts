@@ -7,11 +7,16 @@ import {
   getSignalSigmaPortfolioId,
   resolveModeFromArgv,
 } from './utils/tradierConfig';
+import { isExecutionEnabled } from './utils/executionSettings';
 
 dotenv.config();
 
 async function main() {
   const mode = resolveModeFromArgv();
+  if (!isExecutionEnabled(mode)) {
+    console.log(`${mode} order execution is disabled — skipping.`);
+    process.exit(0);
+  }
   const signalSigmaPortfolioId = getSignalSigmaPortfolioId(mode);
 
   console.log('Initializing order placement...');

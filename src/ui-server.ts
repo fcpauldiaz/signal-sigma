@@ -19,6 +19,11 @@ import {
   evaluateOpenOrder,
   getConfiguredStrategyIds,
 } from './utils/openOrderEligibility';
+import {
+  getExecutionSettings,
+  isExecutionEnabled,
+  setExecutionSettings,
+} from './utils/executionSettings';
 
 const UI_PORT = parseInt(process.env.UI_PORT || '3000', 10);
 const UI_DIST = path.join(__dirname, '..', 'ui', 'dist');
@@ -266,6 +271,7 @@ async function buildStatus(mode: TradingMode) {
     tradier: tradierStatus,
     tradingMode: mode,
     modes: modeSummary(),
+    execution: getExecutionSettings(),
     schedules: {
       rebalance: process.env.REBALANCE_SCHEDULE || '0 14 * * 3',
       orders: process.env.ORDER_SCHEDULE || '0 14-20 * * 3',
@@ -484,11 +490,23 @@ async function runJob(kind: JobKind, mode: TradingMode): Promise<JobState> {
 
     let executionResult: unknown = null;
     if (kind === 'place-orders' || kind === 'rebalance-and-place') {
-      executionResult = await executeOpenOrders({
-        signalSigmaApi,
-        tradierApi,
-        portfolioId,
-      });
+      if (!isExecutionEnabled(mode)) {
+        if (kind === 'place-orders') {
+          throw new Error(
+            `${mode} order execution is disabled. Enable it on the desk before placing orders.`
+          );
+        }
+        executionResult = {
+          skipped: true,
+          reason: `${mode} order execution is disabled`,
+        };
+      } else {
+        executionResult = await executeOpenOrders({
+          signalSigmaApi,
+          tradierApi,
+          portfolioId,
+        });
+      }
     }
 
     currentJob = {
@@ -545,6 +563,21 @@ export function startUiServer(): http.Server {
       }
 
       if (pathname.startsWith('/api/') && !requireAuth(req, res)) {
+        return;
+      }
+
+      if (pathname === '/api/execution' && req.method === 'GET') {
+        sendJson(res, 200, { execution: getExecutionSettings() });
+        return;
+      }
+
+      if (pathname === '/api/execution' && req.method === 'POST') {
+        const body = await parseBody(req);
+        const patch: { paper?: boolean; live?: boolean } = {};
+        if (typeof body.paper === 'boolean') patch.paper = body.paper;
+        if (typeof body.live === 'boolean') patch.live = body.live;
+        const execution = setExecutionSettings(patch);
+        sendJson(res, 200, { execution });
         return;
       }
 

@@ -4,13 +4,15 @@ import { SignalSigmaScraper } from './signalSigmaScraper';
 import { SignalSigmaApi } from './signalSigmaApi';
 import { TradierApi } from './tradierApi';
 import { executeOpenOrders } from './openOrderExecutor';
+import { isExecutionEnabled } from '../utils/executionSettings';
+import type { TradingMode } from '../utils/tradierConfig';
 
 export class UnifiedScheduler {
   private rebalanceTask: cron.ScheduledTask | null = null;
   private orderTask: cron.ScheduledTask | null = null;
   private auth: SignalSigmaAuth;
   private portfolioId: string;
-  private mode: 'paper' | 'live';
+  private mode: TradingMode;
   private rebalanceSchedule: string;
   private orderSchedule: string;
 
@@ -19,7 +21,7 @@ export class UnifiedScheduler {
     portfolioId: string,
     rebalanceSchedule: string,
     orderSchedule: string,
-    mode: 'paper' | 'live' = 'paper'
+    mode: TradingMode = 'paper'
   ) {
     this.auth = auth;
     this.portfolioId = portfolioId;
@@ -70,6 +72,12 @@ export class UnifiedScheduler {
     this.orderTask = cron.schedule(this.orderSchedule, async () => {
       console.log(`\n[Scheduled] Starting order placement at ${new Date().toISOString()}`);
       try {
+        if (!isExecutionEnabled(this.mode)) {
+          console.log(
+            `[Scheduled] Skipping order placement — ${this.mode} execution is disabled`
+          );
+          return;
+        }
         await this.auth.ensureAuthenticated();
         const signalSigmaApi = new SignalSigmaApi(this.auth);
         const tradierApi = TradierApi.forMode(this.mode);

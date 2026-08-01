@@ -8,6 +8,7 @@ import {
   getSignalSigmaPortfolioId,
   resolveModeFromArgv,
 } from './utils/tradierConfig';
+import { isExecutionEnabled } from './utils/executionSettings';
 
 dotenv.config();
 
@@ -35,6 +36,12 @@ async function main() {
   }
 
   console.log('\n✓ Rebalancing completed successfully');
+
+  if (!isExecutionEnabled(mode)) {
+    console.log(`${mode} order execution is disabled — skipping place step.`);
+    process.exit(0);
+  }
+
   console.log('Waiting for backend to update open orders...');
   await new Promise((resolve) => setTimeout(resolve, 3000));
 

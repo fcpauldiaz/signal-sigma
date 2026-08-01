@@ -2,7 +2,7 @@ node_modules/
 dist/
 ui/node_modules/
 ui/dist/
+data/
 .env
 *.log
 .DS_Store
-

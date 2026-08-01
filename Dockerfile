@@ -57,6 +57,8 @@ RUN pnpm run build:ui && pnpm run build
 
 ENV NODE_ENV=production
 ENV UI_PORT=3000
+RUN mkdir -p /app/data
+VOLUME ["/app/data"]
 EXPOSE 3000
 
 CMD ["node", "dist/serve.js"]

@@ -39,6 +39,10 @@ export interface StatusResponse {
     paper: { portfolioId: string; accountId: string };
     live: { portfolioId: string; accountId: string };
   };
+  execution?: {
+    paper: boolean;
+    live: boolean;
+  };
   schedules: {
     rebalance: string;
     orders: string;
@@ -221,6 +225,27 @@ export async function fetchPositions(): Promise<PositionsResponse> {
 
 export async function fetchPerformance(): Promise<PerformanceResponse> {
   const r = await fetch(withMode("/api/performance"), { headers: authHeaders() });
+  if (!r.ok) throw new Error(await parseError(r));
+  return r.json();
+}
+
+export async function fetchExecution(): Promise<{
+  execution: { paper: boolean; live: boolean };
+}> {
+  const r = await fetch("/api/execution", { headers: authHeaders() });
+  if (!r.ok) throw new Error(await parseError(r));
+  return r.json();
+}
+
+export async function updateExecution(patch: {
+  paper?: boolean;
+  live?: boolean;
+}): Promise<{ execution: { paper: boolean; live: boolean } }> {
+  const r = await fetch("/api/execution", {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
   if (!r.ok) throw new Error(await parseError(r));
   return r.json();
 }

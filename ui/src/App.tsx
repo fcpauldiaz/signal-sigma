@@ -15,6 +15,7 @@ import {
   runRebalanceAndPlace,
   setAuthToken,
   setTradingMode,
+  updateExecution,
   type OpenOrderRow,
   type PerformanceResponse,
   type PositionsResponse,
@@ -702,10 +703,21 @@ export default function App() {
     mutationFn: runRebalanceAndPlace,
     onSuccess: invalidateAll,
   });
+  const executionMut = useMutation({
+    mutationFn: updateExecution,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["status"] });
+    },
+  });
 
   const jobRunning = statusQ.data?.job?.status === "running";
   const authRequired = authQ.data?.authEnabled && !authQ.data?.authenticated;
   const canAct = !authRequired && !jobRunning;
+  const executionEnabled =
+    mode === "live"
+      ? Boolean(statusQ.data?.execution?.live)
+      : Boolean(statusQ.data?.execution?.paper);
+  const canPlace = canAct && executionEnabled;
 
   const guard = (fn: () => void) => {
     if (authRequired) {
@@ -780,6 +792,38 @@ export default function App() {
       </nav>
 
       <div className="actions">
+        <div className="execution-toggles">
+          <label className="execution-toggle">
+            <input
+              type="checkbox"
+              checked={Boolean(statusQ.data?.execution?.paper)}
+              disabled={authRequired || executionMut.isPending}
+              onChange={(e) => {
+                if (authRequired) {
+                  setLoginOpen(true);
+                  return;
+                }
+                executionMut.mutate({ paper: e.target.checked });
+              }}
+            />
+            Paper exec
+          </label>
+          <label className="execution-toggle live">
+            <input
+              type="checkbox"
+              checked={Boolean(statusQ.data?.execution?.live)}
+              disabled={authRequired || executionMut.isPending}
+              onChange={(e) => {
+                if (authRequired) {
+                  setLoginOpen(true);
+                  return;
+                }
+                executionMut.mutate({ live: e.target.checked });
+              }}
+            />
+            Live exec
+          </label>
+        </div>
         <button
           type="button"
           disabled={!canAct || rebalanceMut.isPending}
@@ -789,24 +833,41 @@ export default function App() {
         </button>
         <button
           type="button"
-          disabled={!canAct || placeMut.isPending}
+          disabled={!canPlace || placeMut.isPending}
+          title={
+            executionEnabled
+              ? undefined
+              : `Enable ${mode} exec to place orders`
+          }
           onClick={() => guard(() => placeMut.mutate())}
         >
           Place orders
         </button>
         <button
           type="button"
-          disabled={!canAct || bothMut.isPending}
+          disabled={!canPlace || bothMut.isPending}
+          title={
+            executionEnabled
+              ? undefined
+              : `Enable ${mode} exec to place orders`
+          }
           onClick={() => guard(() => bothMut.mutate())}
         >
           Rebalance + place
         </button>
-        {(rebalanceMut.isError || placeMut.isError || bothMut.isError) && (
+        {!executionEnabled && (
+          <span className="status warn">{mode} execution off</span>
+        )}
+        {(rebalanceMut.isError ||
+          placeMut.isError ||
+          bothMut.isError ||
+          executionMut.isError) && (
           <span className="error-msg">
             {(
               (rebalanceMut.error ||
                 placeMut.error ||
-                bothMut.error) as Error
+                bothMut.error ||
+                executionMut.error) as Error
             ).message}
           </span>
         )}
