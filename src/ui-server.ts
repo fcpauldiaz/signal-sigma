@@ -8,7 +8,12 @@ import { SignalSigmaApi } from './services/signalSigmaApi';
 import { SignalSigmaScraper } from './services/signalSigmaScraper';
 import { TradierApi } from './services/tradierApi';
 import { executeOpenOrders } from './services/openOrderExecutor';
-import { getTradierConfig, TradingMode } from './utils/tradierConfig';
+import {
+  getSignalSigmaPortfolioId,
+  getTradierConfig,
+  resolveTradingMode,
+  TradingMode,
+} from './utils/tradierConfig';
 import {
   buildOwnershipBySymbol,
   evaluateOpenOrder,
@@ -24,6 +29,7 @@ type JobKind = 'rebalance' | 'place-orders' | 'rebalance-and-place';
 
 type JobState = {
   kind: JobKind;
+  mode: TradingMode;
   status: 'running' | 'success' | 'error';
   startedAt: string;
   finishedAt?: string;
@@ -105,18 +111,46 @@ function serveStatic(
   });
 }
 
-function createServices() {
-  const portfolioId = process.env.SIGNAL_SIGMA_PORTFOLIO_ID;
-  if (!portfolioId) {
-    throw new Error('SIGNAL_SIGMA_PORTFOLIO_ID is required');
-  }
-
-  const tradier = getTradierConfig();
+function createServices(mode: TradingMode) {
+  const portfolioId = getSignalSigmaPortfolioId(mode);
+  const tradier = getTradierConfig(process.env, mode);
   const auth = SignalSigmaAuth.fromEnv();
   const signalSigmaApi = new SignalSigmaApi(auth);
-  const tradierApi = TradierApi.fromEnv();
+  const tradierApi = TradierApi.forMode(mode);
 
-  return { auth, signalSigmaApi, tradierApi, portfolioId, tradier };
+  return { auth, signalSigmaApi, tradierApi, portfolioId, tradier, mode };
+}
+
+function resolveRequestMode(
+  req: http.IncomingMessage,
+  url: URL,
+  body?: Record<string, unknown>
+): TradingMode {
+  const fromQuery = url.searchParams.get('mode');
+  if (fromQuery) {
+    return resolveTradingMode(fromQuery);
+  }
+  const header = req.headers['x-trading-mode'];
+  if (typeof header === 'string' && header.trim()) {
+    return resolveTradingMode(header);
+  }
+  if (body && typeof body.mode === 'string') {
+    return resolveTradingMode(body.mode);
+  }
+  return resolveTradingMode(process.env.TRADING_MODE);
+}
+
+function modeSummary() {
+  return {
+    paper: {
+      portfolioId: getSignalSigmaPortfolioId('paper'),
+      accountId: getTradierConfig(process.env, 'paper').accountId,
+    },
+    live: {
+      portfolioId: getSignalSigmaPortfolioId('live'),
+      accountId: getTradierConfig(process.env, 'live').accountId,
+    },
+  };
 }
 
 async function checkTradier(tradier: {
@@ -194,8 +228,8 @@ async function checkTradier(tradier: {
   }
 }
 
-async function buildStatus() {
-  const { auth, signalSigmaApi, portfolioId, tradier } = createServices();
+async function buildStatus(mode: TradingMode) {
+  const { auth, signalSigmaApi, portfolioId, tradier } = createServices(mode);
 
   let signalSigma: {
     ok: boolean;
@@ -230,7 +264,8 @@ async function buildStatus() {
   return {
     signalSigma,
     tradier: tradierStatus,
-    tradingMode: tradier.mode,
+    tradingMode: mode,
+    modes: modeSummary(),
     schedules: {
       rebalance: process.env.REBALANCE_SCHEDULE || '0 14 * * 3',
       orders: process.env.ORDER_SCHEDULE || '0 14-20 * * 3',
@@ -242,8 +277,8 @@ async function buildStatus() {
   };
 }
 
-async function buildOrders() {
-  const { auth, signalSigmaApi, tradierApi, portfolioId } = createServices();
+async function buildOrders(mode: TradingMode) {
+  const { auth, signalSigmaApi, tradierApi, portfolioId } = createServices(mode);
   await auth.ensureAuthenticated();
 
   const [{ orders }, portfolios, strategyBooks] = await Promise.all([
@@ -293,6 +328,7 @@ async function buildOrders() {
   });
 
   return {
+    mode,
     orders: enriched,
     pendingCount: pending.length,
     eligibleCount: enriched.filter((o) => o.eligible).length,
@@ -301,8 +337,8 @@ async function buildOrders() {
   };
 }
 
-async function buildPortfolio() {
-  const { auth, signalSigmaApi, portfolioId } = createServices();
+async function buildPortfolio(mode: TradingMode) {
+  const { auth, signalSigmaApi, portfolioId } = createServices(mode);
   await auth.ensureAuthenticated();
   const portfolios = await signalSigmaApi.getPortfolios();
   const portfolio = portfolios.portfolios.find((p) => p.id === portfolioId);
@@ -313,6 +349,7 @@ async function buildPortfolio() {
     id: portfolio.id,
     title: portfolio.title,
     displayCurrency: portfolio.displayCurrency,
+    mode,
     tickers: portfolio.tickers.map((t) => ({
       symbol: t.symbol,
       name: t.name,
@@ -325,9 +362,9 @@ async function buildPortfolio() {
   };
 }
 
-async function buildPositions() {
+async function buildPositions(mode: TradingMode) {
   const { auth, signalSigmaApi, tradierApi, portfolioId, tradier } =
-    createServices();
+    createServices(mode);
   await auth.ensureAuthenticated();
 
   const [brokerPositions, balances, portfolios, openOrders, strategyBooks] =
@@ -347,6 +384,7 @@ async function buildPositions() {
   return {
     mode: tradier.mode,
     accountId: tradier.accountId,
+    portfolioId,
     balances,
     brokerPositions,
     signalPositions: signalTickers.map((t) => {
@@ -368,8 +406,8 @@ async function buildPositions() {
   };
 }
 
-async function buildPerformance() {
-  const { tradierApi, tradier } = createServices();
+async function buildPerformance(mode: TradingMode) {
+  const { tradierApi, tradier } = createServices(mode);
   const [closed, balances] = await Promise.all([
     tradierApi.getGainLoss(100),
     tradierApi.getBalances(),
@@ -419,19 +457,20 @@ async function buildPerformance() {
   };
 }
 
-async function runJob(kind: JobKind): Promise<JobState> {
+async function runJob(kind: JobKind, mode: TradingMode): Promise<JobState> {
   if (currentJob?.status === 'running') {
-    throw new Error(`Job already running: ${currentJob.kind}`);
+    throw new Error(`Job already running: ${currentJob.kind} (${currentJob.mode})`);
   }
 
   currentJob = {
     kind,
+    mode,
     status: 'running',
     startedAt: new Date().toISOString(),
   };
 
   try {
-    const { auth, signalSigmaApi, tradierApi, portfolioId } = createServices();
+    const { auth, signalSigmaApi, tradierApi, portfolioId } = createServices(mode);
     await auth.ensureAuthenticated();
 
     if (kind === 'rebalance' || kind === 'rebalance-and-place') {
@@ -456,7 +495,7 @@ async function runJob(kind: JobKind): Promise<JobState> {
       ...currentJob,
       status: 'success',
       finishedAt: new Date().toISOString(),
-      message: 'completed',
+      message: `completed (${mode})`,
       result: executionResult,
     };
     return currentJob;
@@ -510,27 +549,32 @@ export function startUiServer(): http.Server {
       }
 
       if (pathname === '/api/status' && req.method === 'GET') {
-        sendJson(res, 200, await buildStatus());
+        const mode = resolveRequestMode(req, url);
+        sendJson(res, 200, await buildStatus(mode));
         return;
       }
 
       if (pathname === '/api/orders' && req.method === 'GET') {
-        sendJson(res, 200, await buildOrders());
+        const mode = resolveRequestMode(req, url);
+        sendJson(res, 200, await buildOrders(mode));
         return;
       }
 
       if (pathname === '/api/portfolio' && req.method === 'GET') {
-        sendJson(res, 200, await buildPortfolio());
+        const mode = resolveRequestMode(req, url);
+        sendJson(res, 200, await buildPortfolio(mode));
         return;
       }
 
       if (pathname === '/api/positions' && req.method === 'GET') {
-        sendJson(res, 200, await buildPositions());
+        const mode = resolveRequestMode(req, url);
+        sendJson(res, 200, await buildPositions(mode));
         return;
       }
 
       if (pathname === '/api/performance' && req.method === 'GET') {
-        sendJson(res, 200, await buildPerformance());
+        const mode = resolveRequestMode(req, url);
+        sendJson(res, 200, await buildPerformance(mode));
         return;
       }
 
@@ -540,19 +584,25 @@ export function startUiServer(): http.Server {
       }
 
       if (pathname === '/api/rebalance' && req.method === 'POST') {
-        const job = await runJob('rebalance');
+        const body = await parseBody(req);
+        const mode = resolveRequestMode(req, url, body);
+        const job = await runJob('rebalance', mode);
         sendJson(res, job.status === 'success' ? 200 : 500, { job });
         return;
       }
 
       if (pathname === '/api/place-orders' && req.method === 'POST') {
-        const job = await runJob('place-orders');
+        const body = await parseBody(req);
+        const mode = resolveRequestMode(req, url, body);
+        const job = await runJob('place-orders', mode);
         sendJson(res, job.status === 'success' ? 200 : 500, { job });
         return;
       }
 
       if (pathname === '/api/rebalance-and-place' && req.method === 'POST') {
-        const job = await runJob('rebalance-and-place');
+        const body = await parseBody(req);
+        const mode = resolveRequestMode(req, url, body);
+        const job = await runJob('rebalance-and-place', mode);
         sendJson(res, job.status === 'success' ? 200 : 500, { job });
         return;
       }

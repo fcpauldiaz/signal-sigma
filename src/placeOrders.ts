@@ -3,18 +3,23 @@ import { SignalSigmaAuth } from './services/signalSigmaAuth';
 import { SignalSigmaApi } from './services/signalSigmaApi';
 import { TradierApi } from './services/tradierApi';
 import { executeOpenOrders } from './services/openOrderExecutor';
-import { requireEnv } from './utils/requireEnv';
+import {
+  getSignalSigmaPortfolioId,
+  resolveModeFromArgv,
+} from './utils/tradierConfig';
 
 dotenv.config();
 
 async function main() {
-  const signalSigmaPortfolioId = requireEnv('SIGNAL_SIGMA_PORTFOLIO_ID');
+  const mode = resolveModeFromArgv();
+  const signalSigmaPortfolioId = getSignalSigmaPortfolioId(mode);
 
   console.log('Initializing order placement...');
   const auth = SignalSigmaAuth.fromEnv();
-  const tradierApi = TradierApi.fromEnv();
+  const tradierApi = TradierApi.forMode(mode);
 
   console.log(`Tradier mode: ${tradierApi.mode} (${tradierApi.accountId})`);
+  console.log(`Signal Sigma portfolio: ${signalSigmaPortfolioId}`);
   console.log('Authenticating with Signal Sigma...');
   await auth.ensureAuthenticated();
   console.log('Authentication successful');

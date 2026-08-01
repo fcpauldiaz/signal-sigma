@@ -40,6 +40,10 @@ export class TradierApi {
     return new TradierApi(getTradierConfig());
   }
 
+  static forMode(mode: TradingMode): TradierApi {
+    return new TradierApi(getTradierConfig(process.env, mode));
+  }
+
   async getQuotes(symbols: string[]): Promise<Map<string, TradierQuote>> {
     const uniqueSymbols = [...new Set(symbols.map((s) => s.toUpperCase()))];
     const quotes = new Map<string, TradierQuote>();

@@ -10,6 +10,7 @@ export class UnifiedScheduler {
   private orderTask: cron.ScheduledTask | null = null;
   private auth: SignalSigmaAuth;
   private portfolioId: string;
+  private mode: 'paper' | 'live';
   private rebalanceSchedule: string;
   private orderSchedule: string;
 
@@ -17,12 +18,14 @@ export class UnifiedScheduler {
     auth: SignalSigmaAuth,
     portfolioId: string,
     rebalanceSchedule: string,
-    orderSchedule: string
+    orderSchedule: string,
+    mode: 'paper' | 'live' = 'paper'
   ) {
     this.auth = auth;
     this.portfolioId = portfolioId;
     this.rebalanceSchedule = rebalanceSchedule;
     this.orderSchedule = orderSchedule;
+    this.mode = mode;
   }
 
   start(): void {
@@ -69,7 +72,7 @@ export class UnifiedScheduler {
       try {
         await this.auth.ensureAuthenticated();
         const signalSigmaApi = new SignalSigmaApi(this.auth);
-        const tradierApi = TradierApi.fromEnv();
+        const tradierApi = TradierApi.forMode(this.mode);
 
         const result = await executeOpenOrders({
           signalSigmaApi,

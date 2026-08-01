@@ -207,6 +207,34 @@ input, select {
 
 .nav-auth { margin-left: auto; }
 
+.mode-switch {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: var(--space-8);
+  padding: 2px;
+  border: var(--rule);
+  border-radius: var(--radius-pill);
+  background: var(--color-elevated);
+}
+
+.mode-switch button {
+  border: none;
+  background: transparent;
+  color: var(--color-muted);
+  padding: var(--space-4) var(--space-12);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+}
+
+.mode-switch button.active {
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+
+.mode-switch button.active.live {
+  color: var(--color-warning);
+}
+
 .nav-auth-btn {
   background: transparent;
   border: none;

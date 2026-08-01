@@ -1,3 +1,5 @@
+export type TradingMode = "paper" | "live";
+
 export interface AuthStatus {
   authEnabled: boolean;
   authenticated: boolean;
@@ -5,6 +7,7 @@ export interface AuthStatus {
 
 export interface JobState {
   kind: string;
+  mode?: TradingMode;
   status: "running" | "success" | "error";
   startedAt: string;
   finishedAt?: string;
@@ -28,10 +31,14 @@ export interface StatusResponse {
     ok: boolean;
     message: string;
     accountId: string;
-    mode?: "paper" | "live";
+    mode?: TradingMode;
     totalEquity?: number | null;
   };
-  tradingMode?: "paper" | "live";
+  tradingMode?: TradingMode;
+  modes?: {
+    paper: { portfolioId: string; accountId: string };
+    live: { portfolioId: string; accountId: string };
+  };
   schedules: {
     rebalance: string;
     orders: string;
@@ -59,6 +66,7 @@ export interface OpenOrderRow {
 }
 
 export interface OrdersResponse {
+  mode?: TradingMode;
   orders: OpenOrderRow[];
   pendingCount: number;
   eligibleCount: number;
@@ -67,8 +75,9 @@ export interface OrdersResponse {
 }
 
 export interface PositionsResponse {
-  mode: "paper" | "live";
+  mode: TradingMode;
   accountId: string;
+  portfolioId?: string;
   balances: {
     totalEquity: number | null;
     totalCash: number | null;
@@ -99,7 +108,7 @@ export interface PositionsResponse {
 }
 
 export interface PerformanceResponse {
-  mode: "paper" | "live";
+  mode: TradingMode;
   accountId: string;
   balances: PositionsResponse["balances"];
   totals: {
@@ -124,6 +133,10 @@ export interface PerformanceResponse {
 }
 
 let _authToken: string | null = localStorage.getItem("signal_sigma_token");
+let _tradingMode: TradingMode =
+  (localStorage.getItem("signal_sigma_mode") as TradingMode | null) === "live"
+    ? "live"
+    : "paper";
 
 export function getAuthToken(): string | null {
   return _authToken;
@@ -135,8 +148,27 @@ export function setAuthToken(token: string | null): void {
   else localStorage.removeItem("signal_sigma_token");
 }
 
+export function getTradingMode(): TradingMode {
+  return _tradingMode;
+}
+
+export function setTradingMode(mode: TradingMode): void {
+  _tradingMode = mode;
+  localStorage.setItem("signal_sigma_mode", mode);
+}
+
 function authHeaders(): Record<string, string> {
-  return _authToken ? { Authorization: `Bearer ${_authToken}` } : {};
+  const headers: Record<string, string> = {
+    "X-Trading-Mode": _tradingMode,
+  };
+  if (_authToken) headers.Authorization = `Bearer ${_authToken}`;
+  return headers;
+}
+
+function withMode(path: string): string {
+  const url = new URL(path, window.location.origin);
+  url.searchParams.set("mode", _tradingMode);
+  return url.pathname + url.search;
 }
 
 async function parseError(r: Response): Promise<string> {
@@ -170,47 +202,56 @@ export async function logout(token: string): Promise<void> {
 }
 
 export async function fetchStatus(): Promise<StatusResponse> {
-  const r = await fetch("/api/status", { headers: authHeaders() });
+  const r = await fetch(withMode("/api/status"), { headers: authHeaders() });
   if (!r.ok) throw new Error(await parseError(r));
   return r.json();
 }
 
 export async function fetchOrders(): Promise<OrdersResponse> {
-  const r = await fetch("/api/orders", { headers: authHeaders() });
+  const r = await fetch(withMode("/api/orders"), { headers: authHeaders() });
   if (!r.ok) throw new Error(await parseError(r));
   return r.json();
 }
 
 export async function fetchPositions(): Promise<PositionsResponse> {
-  const r = await fetch("/api/positions", { headers: authHeaders() });
+  const r = await fetch(withMode("/api/positions"), { headers: authHeaders() });
   if (!r.ok) throw new Error(await parseError(r));
   return r.json();
 }
 
 export async function fetchPerformance(): Promise<PerformanceResponse> {
-  const r = await fetch("/api/performance", { headers: authHeaders() });
+  const r = await fetch(withMode("/api/performance"), { headers: authHeaders() });
   if (!r.ok) throw new Error(await parseError(r));
   return r.json();
 }
 
 export async function runRebalance(): Promise<{ job: JobState }> {
-  const r = await fetch("/api/rebalance", { method: "POST", headers: authHeaders() });
+  const r = await fetch(withMode("/api/rebalance"), {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: _tradingMode }),
+  });
   const data = await r.json();
   if (!r.ok) throw new Error(data.error || data.job?.message || r.statusText);
   return data;
 }
 
 export async function runPlaceOrders(): Promise<{ job: JobState }> {
-  const r = await fetch("/api/place-orders", { method: "POST", headers: authHeaders() });
+  const r = await fetch(withMode("/api/place-orders"), {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: _tradingMode }),
+  });
   const data = await r.json();
   if (!r.ok) throw new Error(data.error || data.job?.message || r.statusText);
   return data;
 }
 
 export async function runRebalanceAndPlace(): Promise<{ job: JobState }> {
-  const r = await fetch("/api/rebalance-and-place", {
+  const r = await fetch(withMode("/api/rebalance-and-place"), {
     method: "POST",
-    headers: authHeaders(),
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: _tradingMode }),
   });
   const data = await r.json();
   if (!r.ok) throw new Error(data.error || data.job?.message || r.statusText);

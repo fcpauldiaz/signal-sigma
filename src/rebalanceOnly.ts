@@ -1,14 +1,20 @@
 import dotenv from 'dotenv';
 import { SignalSigmaAuth } from './services/signalSigmaAuth';
 import { SignalSigmaScraper } from './services/signalSigmaScraper';
-import { requireEnv } from './utils/requireEnv';
+import {
+  getSignalSigmaPortfolioId,
+  resolveModeFromArgv,
+} from './utils/tradierConfig';
 
 dotenv.config();
 
 async function main() {
-  const signalSigmaPortfolioId = requireEnv('SIGNAL_SIGMA_PORTFOLIO_ID');
+  const mode = resolveModeFromArgv();
+  const signalSigmaPortfolioId = getSignalSigmaPortfolioId(mode);
 
   console.log('Initializing rebalancing...');
+  console.log(`Mode: ${mode}`);
+  console.log(`Signal Sigma portfolio: ${signalSigmaPortfolioId}`);
   const auth = SignalSigmaAuth.fromEnv();
 
   console.log('Authenticating with Signal Sigma...');

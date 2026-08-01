@@ -7,16 +7,19 @@ import {
   fetchPositions,
   fetchStatus,
   getAuthToken,
+  getTradingMode,
   login,
   logout,
   runPlaceOrders,
   runRebalance,
   runRebalanceAndPlace,
   setAuthToken,
+  setTradingMode,
   type OpenOrderRow,
   type PerformanceResponse,
   type PositionsResponse,
   type StatusResponse,
+  type TradingMode,
 } from "./api";
 
 type Route = "overview" | "positions" | "orders" | "performance";
@@ -302,6 +305,12 @@ function OverviewPage({
           Track equity, open risk, and realized P&amp;L for{" "}
           <code>{status.tradier.accountId || "—"}</code> (
           {status.tradingMode || status.tradier.mode || "—"})
+          {status.signalSigma.portfolio ? (
+            <>
+              {" "}
+              · SS <code>{status.signalSigma.portfolio.title}</code>
+            </>
+          ) : null}
         </p>
       </header>
 
@@ -632,6 +641,13 @@ export default function App() {
   const qc = useQueryClient();
   const [loginOpen, setLoginOpen] = useState(false);
   const [token, setToken] = useState<string | null>(() => getAuthToken());
+  const [mode, setMode] = useState<TradingMode>(() => getTradingMode());
+
+  const switchMode = (next: TradingMode) => {
+    setTradingMode(next);
+    setMode(next);
+    void qc.invalidateQueries();
+  };
 
   const authQ = useQuery({
     queryKey: ["auth", token],
@@ -640,28 +656,28 @@ export default function App() {
   });
 
   const statusQ = useQuery({
-    queryKey: ["status"],
+    queryKey: ["status", mode],
     queryFn: fetchStatus,
     refetchInterval: (q) =>
       q.state.data?.job?.status === "running" ? 1500 : 15_000,
   });
 
   const ordersQ = useQuery({
-    queryKey: ["orders"],
+    queryKey: ["orders", mode],
     queryFn: fetchOrders,
     refetchInterval: 30_000,
     enabled: route === "orders" || route === "overview",
   });
 
   const positionsQ = useQuery({
-    queryKey: ["positions"],
+    queryKey: ["positions", mode],
     queryFn: fetchPositions,
     refetchInterval: 30_000,
     enabled: route === "positions" || route === "overview",
   });
 
   const perfQ = useQuery({
-    queryKey: ["performance"],
+    queryKey: ["performance", mode],
     queryFn: fetchPerformance,
     refetchInterval: 60_000,
     enabled: route === "performance" || route === "overview",
@@ -719,6 +735,22 @@ export default function App() {
             {n.label}
           </a>
         ))}
+        <span className="mode-switch" role="group" aria-label="Trading mode">
+          <button
+            type="button"
+            className={mode === "paper" ? "active" : undefined}
+            onClick={() => switchMode("paper")}
+          >
+            Paper
+          </button>
+          <button
+            type="button"
+            className={mode === "live" ? "active live" : undefined}
+            onClick={() => switchMode("live")}
+          >
+            Live
+          </button>
+        </span>
         <span className="nav-auth">
           {authQ.data?.authEnabled ? (
             authQ.data.authenticated ? (

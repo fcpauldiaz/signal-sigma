@@ -6,5 +6,11 @@ export function requireEnv(name: string): string {
   return value;
 }
 
-export { requireTradierEnv, getTradierConfig, resolveTradingMode } from './tradierConfig';
+export {
+  requireTradierEnv,
+  getTradierConfig,
+  getSignalSigmaPortfolioId,
+  resolveTradingMode,
+  resolveModeFromArgv,
+} from './tradierConfig';
 export type { TradingMode, TradierConfig } from './tradierConfig';
