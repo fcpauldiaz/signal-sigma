@@ -95,6 +95,11 @@ export interface PositionsResponse {
     quantity: number;
     costBasis: number;
     dateAcquired: string | null;
+    lastPrice: number | null;
+    avgCost: number | null;
+    marketValue: number | null;
+    openPl: number | null;
+    openPlPercent: number | null;
   }>;
   signalPositions: Array<{
     symbol: string;

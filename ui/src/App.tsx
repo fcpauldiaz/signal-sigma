@@ -57,7 +57,7 @@ function pct(n: number | null | undefined): string {
   return `${(n * 100).toFixed(1)}%`;
 }
 
-function plClass(n: number | null | undefined): string {
+function plClass(n: number | null | undefined): "" | "pos" | "neg" {
   if (n == null || n === 0) return "";
   return n > 0 ? "pos" : "neg";
 }
@@ -418,7 +418,11 @@ function PositionsPage({ data }: { data: PositionsResponse }) {
                 <tr>
                   <th>Symbol</th>
                   <th>Qty</th>
-                  <th>Cost basis</th>
+                  <th>Avg cost</th>
+                  <th>Last</th>
+                  <th>Mkt value</th>
+                  <th>Open P&L</th>
+                  <th>P&L %</th>
                   <th>Acquired</th>
                 </tr>
               </thead>
@@ -427,7 +431,21 @@ function PositionsPage({ data }: { data: PositionsResponse }) {
                   <tr key={p.symbol}>
                     <td>{p.symbol}</td>
                     <td>{p.quantity}</td>
-                    <td>{money(p.costBasis)}</td>
+                    <td>{money(p.avgCost)}</td>
+                    <td>{money(p.lastPrice)}</td>
+                    <td>{money(p.marketValue)}</td>
+                    <td>
+                      <span className={`pl ${plClass(p.openPl)}`.trim()}>
+                        {money(p.openPl)}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`pl ${plClass(p.openPlPercent)}`.trim()}>
+                        {p.openPlPercent == null
+                          ? "—"
+                          : `${p.openPlPercent.toFixed(1)}%`}
+                      </span>
+                    </td>
                     <td>{p.dateAcquired?.slice(0, 10) || "—"}</td>
                   </tr>
                 ))}
@@ -623,10 +641,16 @@ function PerformancePage({ data }: { data: PerformanceResponse }) {
                   <td>{t.symbol}</td>
                   <td>{t.quantity}</td>
                   <td>{money(t.proceeds)}</td>
-                  <td className={plClass(t.gainLoss)}>{money(t.gainLoss)}</td>
-                  <td className={plClass(t.gainLossPercent)}>
-                    {t.gainLossPercent?.toFixed?.(1) ?? t.gainLossPercent}%
-                  </td>
+                  <td>
+                      <span className={`pl ${plClass(t.gainLoss)}`.trim()}>
+                        {money(t.gainLoss)}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`pl ${plClass(t.gainLossPercent)}`.trim()}>
+                        {t.gainLossPercent?.toFixed?.(1) ?? t.gainLossPercent}%
+                      </span>
+                    </td>
                 </tr>
               ))}
             </tbody>

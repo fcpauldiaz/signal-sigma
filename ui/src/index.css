@@ -393,6 +393,18 @@ table.data th {
 table.data .pos { color: var(--color-positive); }
 table.data .neg { color: var(--color-negative); }
 
+table.data .pl {
+  font-weight: 600;
+}
+
+table.data .pl.pos {
+  color: var(--color-positive);
+}
+
+table.data .pl.neg {
+  color: var(--color-negative);
+}
+
 .chart-wrap {
   width: 100%;
   min-width: 0;

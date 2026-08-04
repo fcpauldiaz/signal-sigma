@@ -9,7 +9,7 @@ import {
   SignalSigmaApi,
 } from './services/signalSigmaApi';
 import { SignalSigmaScraper } from './services/signalSigmaScraper';
-import { TradierApi } from './services/tradierApi';
+import { TradierApi, resolveQuotePrice } from './services/tradierApi';
 import { executeOpenOrders } from './services/openOrderExecutor';
 import { TtlCache } from './utils/ttlCache';
 import {
@@ -387,61 +387,79 @@ async function buildPortfolio(mode: TradingMode) {
 }
 
 async function buildPositions(mode: TradingMode) {
-  return deskResponseCache.getOrSet(
-    `positions:${mode}`,
-    DESK_CACHE_TTL_MS,
-    async () => {
-      const { auth, signalSigmaApi, tradierApi, portfolioId, tradier } =
-        createServices(mode);
-      await auth.ensureAuthenticated();
+  // No long desk TTL — broker open P/L needs fresh quotes each request.
+  // Signal Sigma portfolio/strategy books still use the API-layer cache.
+  const { auth, signalSigmaApi, tradierApi, portfolioId, tradier } =
+    createServices(mode);
+  await auth.ensureAuthenticated();
 
-      const [brokerPositions, balances, portfolios, openOrders, strategyBooks] =
-        await Promise.all([
-          tradierApi.getPositions(),
-          tradierApi.getBalances(),
-          signalSigmaApi.getPortfolios(),
-          signalSigmaApi.getOpenOrders(portfolioId),
-          signalSigmaApi.getStrategyPositionBooks(getConfiguredStrategyIds()),
-        ]);
+  const [brokerPositions, balances, portfolios, openOrders, strategyBooks] =
+    await Promise.all([
+      tradierApi.getPositions(),
+      tradierApi.getBalances(),
+      signalSigmaApi.getPortfolios(),
+      signalSigmaApi.getOpenOrders(portfolioId),
+      signalSigmaApi.getStrategyPositionBooks(getConfiguredStrategyIds()),
+    ]);
 
-      const portfolio = portfolios.portfolios.find((p) => p.id === portfolioId);
-      const signalTickers = portfolio?.tickers ?? [];
-      const pendingOrders = openOrders.orders.filter(
-        (o) => o.status === 'PENDING'
-      );
-      const ownershipBySymbol = buildOwnershipBySymbol(
-        signalTickers,
-        strategyBooks
-      );
+  const portfolio = portfolios.portfolios.find((p) => p.id === portfolioId);
+  const signalTickers = portfolio?.tickers ?? [];
+  const pendingOrders = openOrders.orders.filter((o) => o.status === 'PENDING');
+  const ownershipBySymbol = buildOwnershipBySymbol(signalTickers, strategyBooks);
 
-      return {
-        mode: tradier.mode,
-        accountId: tradier.accountId,
-        portfolioId,
-        balances,
-        brokerPositions,
-        signalPositions: signalTickers.map((t) => {
-          const ownership = ownershipBySymbol.get(t.symbol.toUpperCase());
-          return {
-            symbol: t.symbol,
-            name: t.name,
-            amount: t.amount,
-            targetAmount: t.targetAmount,
-            lastPrice: t.lastPrice,
-            ownershipPrice: ownership?.ownershipPrice ?? t.ownershipPrice,
-            strategy: ownership?.strategy || t.customGroup || null,
-            value: t.value,
-            percent: t.percent,
-          };
-        }),
-        pendingOrderCount: pendingOrders.length,
-        signalPortfolioValue: signalTickers.reduce(
-          (sum, t) => sum + (t.value || 0),
-          0
-        ),
-      };
-    }
+  const quotes = await tradierApi.getQuotes(
+    brokerPositions.map((p) => p.symbol)
   );
+
+  const enrichedBrokerPositions = brokerPositions.map((position) => {
+    const lastPrice = resolveQuotePrice(quotes.get(position.symbol));
+    const marketValue =
+      lastPrice !== null ? lastPrice * position.quantity : null;
+    const openPl =
+      marketValue !== null ? marketValue - position.costBasis : null;
+    const openPlPercent =
+      openPl !== null && position.costBasis !== 0
+        ? (openPl / Math.abs(position.costBasis)) * 100
+        : null;
+    const avgCost =
+      position.quantity !== 0 ? position.costBasis / position.quantity : null;
+
+    return {
+      ...position,
+      lastPrice,
+      avgCost,
+      marketValue,
+      openPl,
+      openPlPercent,
+    };
+  });
+
+  return {
+    mode: tradier.mode,
+    accountId: tradier.accountId,
+    portfolioId,
+    balances,
+    brokerPositions: enrichedBrokerPositions,
+    signalPositions: signalTickers.map((t) => {
+      const ownership = ownershipBySymbol.get(t.symbol.toUpperCase());
+      return {
+        symbol: t.symbol,
+        name: t.name,
+        amount: t.amount,
+        targetAmount: t.targetAmount,
+        lastPrice: t.lastPrice,
+        ownershipPrice: ownership?.ownershipPrice ?? t.ownershipPrice,
+        strategy: ownership?.strategy || t.customGroup || null,
+        value: t.value,
+        percent: t.percent,
+      };
+    }),
+    pendingOrderCount: pendingOrders.length,
+    signalPortfolioValue: signalTickers.reduce(
+      (sum, t) => sum + (t.value || 0),
+      0
+    ),
+  };
 }
 
 async function buildPerformance(mode: TradingMode) {
