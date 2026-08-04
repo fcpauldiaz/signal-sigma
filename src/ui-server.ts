@@ -32,8 +32,7 @@ import {
 const UI_PORT = parseInt(process.env.UI_PORT || '3000', 10);
 const UI_DIST = path.join(__dirname, '..', 'ui', 'dist');
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD?.trim() || '';
-const ORDERS_RESPONSE_TTL_MS = 15_000;
-const POSITIONS_RESPONSE_TTL_MS = 15_000;
+const DESK_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const deskResponseCache = new TtlCache();
 const activeSessions = new Set<string>();
 
@@ -293,7 +292,7 @@ async function buildStatus(mode: TradingMode) {
 async function buildOrders(mode: TradingMode) {
   return deskResponseCache.getOrSet(
     `orders:${mode}`,
-    ORDERS_RESPONSE_TTL_MS,
+    DESK_CACHE_TTL_MS,
     async () => {
       const { auth, signalSigmaApi, tradierApi, portfolioId } =
         createServices(mode);
@@ -390,7 +389,7 @@ async function buildPortfolio(mode: TradingMode) {
 async function buildPositions(mode: TradingMode) {
   return deskResponseCache.getOrSet(
     `positions:${mode}`,
-    POSITIONS_RESPONSE_TTL_MS,
+    DESK_CACHE_TTL_MS,
     async () => {
       const { auth, signalSigmaApi, tradierApi, portfolioId, tradier } =
         createServices(mode);

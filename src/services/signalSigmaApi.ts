@@ -22,9 +22,7 @@ export type FetchCacheOptions = {
   bypassCache?: boolean;
 };
 
-const PORTFOLIOS_TTL_MS = 45_000;
-const STRATEGY_BOOKS_TTL_MS = 60_000;
-const OPEN_ORDERS_TTL_MS = 15_000;
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 const signalSigmaCache = new TtlCache();
 
@@ -95,7 +93,7 @@ export class SignalSigmaApi {
     if (options.bypassCache) {
       return this.fetchPortfolios();
     }
-    return signalSigmaCache.getOrSet('portfolios', PORTFOLIOS_TTL_MS, () =>
+    return signalSigmaCache.getOrSet('portfolios', CACHE_TTL_MS, () =>
       this.fetchPortfolios()
     );
   }
@@ -130,7 +128,7 @@ export class SignalSigmaApi {
       signalSigmaCache.invalidate(key);
       return fresh;
     }
-    return signalSigmaCache.getOrSet(key, OPEN_ORDERS_TTL_MS, () =>
+    return signalSigmaCache.getOrSet(key, CACHE_TTL_MS, () =>
       this.fetchOpenOrders(portfolioId)
     );
   }
@@ -219,7 +217,7 @@ export class SignalSigmaApi {
     if (options.bypassCache) {
       return this.fetchStrategyPositionBooks(strategyIds);
     }
-    return signalSigmaCache.getOrSet(key, STRATEGY_BOOKS_TTL_MS, () =>
+    return signalSigmaCache.getOrSet(key, CACHE_TTL_MS, () =>
       this.fetchStrategyPositionBooks(strategyIds)
     );
   }
