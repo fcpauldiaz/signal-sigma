@@ -15,8 +15,8 @@ async function main() {
   const tradier = getTradierConfig(process.env, mode);
   const enableScheduler = process.env.ENABLE_SCHEDULER === 'true';
 
-  const rebalanceSchedule = process.env.REBALANCE_SCHEDULE || '0 14 * * 3';
-  const orderSchedule = process.env.ORDER_SCHEDULE || '0 14-20 * * 3';
+  const rebalanceSchedule = process.env.REBALANCE_SCHEDULE || '0 14 * * 2';
+  const orderSchedule = process.env.ORDER_SCHEDULE || '0 14-20 * * 2';
 
   if (!enableScheduler) {
     console.log('Scheduler is disabled. Set ENABLE_SCHEDULER=true to enable.');

@@ -9,6 +9,7 @@ import {
   StrategyTableApiEnvelope,
   Ticker,
 } from '../types';
+import { TtlCache } from '../utils/ttlCache';
 import { SignalSigmaAuth } from './signalSigmaAuth';
 
 export type StrategyPositionBook = {
@@ -16,6 +17,20 @@ export type StrategyPositionBook = {
   title: string;
   tickers: Ticker[];
 };
+
+export type FetchCacheOptions = {
+  bypassCache?: boolean;
+};
+
+const PORTFOLIOS_TTL_MS = 45_000;
+const STRATEGY_BOOKS_TTL_MS = 60_000;
+const OPEN_ORDERS_TTL_MS = 15_000;
+
+const signalSigmaCache = new TtlCache();
+
+export function invalidateSignalSigmaCache(): void {
+  signalSigmaCache.invalidate();
+}
 
 export class SignalSigmaApi {
   private auth: SignalSigmaAuth;
@@ -74,7 +89,18 @@ export class SignalSigmaApi {
     throw new Error('Invalid open orders response: orders not found');
   }
 
-  async getPortfolios(): Promise<PortfolioResponse> {
+  async getPortfolios(
+    options: FetchCacheOptions = {}
+  ): Promise<PortfolioResponse> {
+    if (options.bypassCache) {
+      return this.fetchPortfolios();
+    }
+    return signalSigmaCache.getOrSet('portfolios', PORTFOLIOS_TTL_MS, () =>
+      this.fetchPortfolios()
+    );
+  }
+
+  private async fetchPortfolios(): Promise<PortfolioResponse> {
     try {
       return await this.withAuthRetry(async () => {
         const headers = await this.getAuthHeaders();
@@ -94,7 +120,24 @@ export class SignalSigmaApi {
     }
   }
 
-  async getOpenOrders(portfolioId: string): Promise<OpenOrdersResponse> {
+  async getOpenOrders(
+    portfolioId: string,
+    options: FetchCacheOptions = {}
+  ): Promise<OpenOrdersResponse> {
+    const key = `open-orders:${portfolioId}`;
+    if (options.bypassCache) {
+      const fresh = await this.fetchOpenOrders(portfolioId);
+      signalSigmaCache.invalidate(key);
+      return fresh;
+    }
+    return signalSigmaCache.getOrSet(key, OPEN_ORDERS_TTL_MS, () =>
+      this.fetchOpenOrders(portfolioId)
+    );
+  }
+
+  private async fetchOpenOrders(
+    portfolioId: string
+  ): Promise<OpenOrdersResponse> {
     try {
       return await this.withAuthRetry(async () => {
         const headers = await this.getAuthHeaders();
@@ -169,21 +212,34 @@ export class SignalSigmaApi {
   }
 
   async getStrategyPositionBooks(
+    strategyIds: string[],
+    options: FetchCacheOptions = {}
+  ): Promise<StrategyPositionBook[]> {
+    const key = `strategy-books:${strategyIds.slice().sort().join(',')}`;
+    if (options.bypassCache) {
+      return this.fetchStrategyPositionBooks(strategyIds);
+    }
+    return signalSigmaCache.getOrSet(key, STRATEGY_BOOKS_TTL_MS, () =>
+      this.fetchStrategyPositionBooks(strategyIds)
+    );
+  }
+
+  private async fetchStrategyPositionBooks(
     strategyIds: string[]
   ): Promise<StrategyPositionBook[]> {
-    const books: StrategyPositionBook[] = [];
-    for (const strategyId of strategyIds) {
-      const [strategy, tickers] = await Promise.all([
-        this.getStrategy(strategyId),
-        this.getStrategyTable(strategyId, 'OVERVIEW'),
-      ]);
-      books.push({
-        id: strategy.id,
-        title: strategy.title,
-        tickers: tickers.filter((t) => t.systemClassification !== 'cash'),
-      });
-    }
-    return books;
+    return Promise.all(
+      strategyIds.map(async (strategyId) => {
+        const [strategy, tickers] = await Promise.all([
+          this.getStrategy(strategyId),
+          this.getStrategyTable(strategyId, 'OVERVIEW'),
+        ]);
+        return {
+          id: strategy.id,
+          title: strategy.title,
+          tickers: tickers.filter((t) => t.systemClassification !== 'cash'),
+        };
+      })
+    );
   }
 
   async executeOrders(portfolioId: string, orderIds: string[]): Promise<void> {
@@ -200,6 +256,7 @@ export class SignalSigmaApi {
           { headers }
         );
       });
+      signalSigmaCache.invalidate(`open-orders:${portfolioId}`);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         throw new Error(

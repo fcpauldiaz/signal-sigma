@@ -24,9 +24,11 @@ export async function executeOpenOrders(options: {
   const { signalSigmaApi, tradierApi, portfolioId } = options;
 
   const [{ orders }, portfolios, strategyBooks] = await Promise.all([
-    signalSigmaApi.getOpenOrders(portfolioId),
-    signalSigmaApi.getPortfolios(),
-    signalSigmaApi.getStrategyPositionBooks(getConfiguredStrategyIds()),
+    signalSigmaApi.getOpenOrders(portfolioId, { bypassCache: true }),
+    signalSigmaApi.getPortfolios({ bypassCache: true }),
+    signalSigmaApi.getStrategyPositionBooks(getConfiguredStrategyIds(), {
+      bypassCache: true,
+    }),
   ]);
 
   const portfolio = portfolios.portfolios.find((p) => p.id === portfolioId);

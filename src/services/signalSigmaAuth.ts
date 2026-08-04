@@ -7,6 +7,7 @@ const API_BASE = 'https://signal-sigma-api-prod-649902632625.europe-west2.run.ap
 
 export type SignalSigmaAuthConfig = {
   refreshToken?: string;
+  accessToken?: string;
   email?: string;
   password?: string;
   persistTokens?: boolean;
@@ -38,17 +39,21 @@ function isJwtExpired(token: string, skewSeconds = 60): boolean {
 
 export class SignalSigmaAuth {
   private refreshToken: string | null;
-  private accessToken: string | null = null;
+  private accessToken: string | null;
   private readonly email: string | null;
   private readonly password: string | null;
   private readonly persistTokens: boolean;
   private readonly envFilePath: string;
   private readonly loginEndpoint = `${API_BASE}/api/auth/login`;
   private readonly refreshEndpoint = `${API_BASE}/api/auth/refresh`;
+  private authInFlight: Promise<string> | null = null;
+
+  private static shared: SignalSigmaAuth | null = null;
 
   constructor(config: SignalSigmaAuthConfig | string) {
     if (typeof config === 'string') {
       this.refreshToken = config || null;
+      this.accessToken = null;
       this.email = null;
       this.password = null;
       this.persistTokens = false;
@@ -57,6 +62,7 @@ export class SignalSigmaAuth {
     }
 
     this.refreshToken = config.refreshToken || null;
+    this.accessToken = config.accessToken || null;
     this.email = config.email || null;
     this.password = config.password || null;
     this.persistTokens = config.persistTokens ?? true;
@@ -67,22 +73,47 @@ export class SignalSigmaAuth {
         'Signal Sigma auth requires SIGNAL_SIGMA_REFRESH_TOKEN or SIGNAL_SIGMA_EMAIL + SIGNAL_SIGMA_PASSWORD'
       );
     }
+
+    if (this.accessToken && isJwtExpired(this.accessToken)) {
+      this.accessToken = null;
+    }
   }
 
   static fromEnv(): SignalSigmaAuth {
     const persistEnv = process.env.SIGNAL_SIGMA_PERSIST_TOKENS;
     return new SignalSigmaAuth({
       refreshToken: process.env.SIGNAL_SIGMA_REFRESH_TOKEN,
+      accessToken: process.env.SIGNAL_SIGMA_ACCESS_TOKEN,
       email: process.env.SIGNAL_SIGMA_EMAIL,
       password: process.env.SIGNAL_SIGMA_PASSWORD,
       persistTokens: persistEnv === undefined ? true : persistEnv === 'true',
     });
   }
 
+  /** Process-wide auth instance so UI polls reuse the same access token. */
+  static sharedFromEnv(): SignalSigmaAuth {
+    if (!this.shared) {
+      this.shared = SignalSigmaAuth.fromEnv();
+    }
+    return this.shared;
+  }
+
   async ensureAuthenticated(): Promise<string> {
     if (this.accessToken && !isJwtExpired(this.accessToken)) {
       return this.accessToken;
     }
+
+    if (this.authInFlight) {
+      return this.authInFlight;
+    }
+
+    this.authInFlight = this.authenticate().finally(() => {
+      this.authInFlight = null;
+    });
+    return this.authInFlight;
+  }
+
+  private async authenticate(): Promise<string> {
     this.accessToken = null;
 
     if (this.refreshToken && !isJwtExpired(this.refreshToken)) {
@@ -256,14 +287,15 @@ export class SignalSigmaAuth {
   private applyTokens(tokens: TokenPair): void {
     this.accessToken = tokens.accessToken;
     this.refreshToken = tokens.refreshToken;
-    this.persistRefreshToken(tokens.refreshToken);
+    process.env.SIGNAL_SIGMA_REFRESH_TOKEN = tokens.refreshToken;
+    process.env.SIGNAL_SIGMA_ACCESS_TOKEN = tokens.accessToken;
+
+    if (this.persistTokens) {
+      this.persistRefreshTokenToEnv(tokens.refreshToken);
+    }
   }
 
-  private persistRefreshToken(refreshToken: string): void {
-    if (!this.persistTokens) {
-      return;
-    }
-
+  private persistRefreshTokenToEnv(refreshToken: string): void {
     try {
       if (!fs.existsSync(this.envFilePath)) {
         return;
@@ -279,8 +311,6 @@ export class SignalSigmaAuth {
 
       if (next !== current) {
         fs.writeFileSync(this.envFilePath, next, 'utf8');
-        process.env.SIGNAL_SIGMA_REFRESH_TOKEN = refreshToken;
-        console.log('Persisted updated Signal Sigma refresh token to .env');
       }
     } catch (error) {
       console.warn(

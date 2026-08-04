@@ -4,10 +4,14 @@ import * as http from 'http';
 import * as path from 'path';
 import axios from 'axios';
 import { SignalSigmaAuth } from './services/signalSigmaAuth';
-import { SignalSigmaApi } from './services/signalSigmaApi';
+import {
+  invalidateSignalSigmaCache,
+  SignalSigmaApi,
+} from './services/signalSigmaApi';
 import { SignalSigmaScraper } from './services/signalSigmaScraper';
 import { TradierApi } from './services/tradierApi';
 import { executeOpenOrders } from './services/openOrderExecutor';
+import { TtlCache } from './utils/ttlCache';
 import {
   getSignalSigmaPortfolioId,
   getTradierConfig,
@@ -28,6 +32,9 @@ import {
 const UI_PORT = parseInt(process.env.UI_PORT || '3000', 10);
 const UI_DIST = path.join(__dirname, '..', 'ui', 'dist');
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD?.trim() || '';
+const ORDERS_RESPONSE_TTL_MS = 15_000;
+const POSITIONS_RESPONSE_TTL_MS = 15_000;
+const deskResponseCache = new TtlCache();
 const activeSessions = new Set<string>();
 
 type JobKind = 'rebalance' | 'place-orders' | 'rebalance-and-place';
@@ -119,7 +126,7 @@ function serveStatic(
 function createServices(mode: TradingMode) {
   const portfolioId = getSignalSigmaPortfolioId(mode);
   const tradier = getTradierConfig(process.env, mode);
-  const auth = SignalSigmaAuth.fromEnv();
+  const auth = SignalSigmaAuth.sharedFromEnv();
   const signalSigmaApi = new SignalSigmaApi(auth);
   const tradierApi = TradierApi.forMode(mode);
 
@@ -273,8 +280,8 @@ async function buildStatus(mode: TradingMode) {
     modes: modeSummary(),
     execution: getExecutionSettings(),
     schedules: {
-      rebalance: process.env.REBALANCE_SCHEDULE || '0 14 * * 3',
-      orders: process.env.ORDER_SCHEDULE || '0 14-20 * * 3',
+      rebalance: process.env.REBALANCE_SCHEDULE || '0 14 * * 2',
+      orders: process.env.ORDER_SCHEDULE || '0 14-20 * * 2',
       // Jobs run via Coolify scheduled tasks; in-app node-cron stays off.
       source: 'coolify',
       schedulerEnabled: false,
@@ -284,63 +291,75 @@ async function buildStatus(mode: TradingMode) {
 }
 
 async function buildOrders(mode: TradingMode) {
-  const { auth, signalSigmaApi, tradierApi, portfolioId } = createServices(mode);
-  await auth.ensureAuthenticated();
+  return deskResponseCache.getOrSet(
+    `orders:${mode}`,
+    ORDERS_RESPONSE_TTL_MS,
+    async () => {
+      const { auth, signalSigmaApi, tradierApi, portfolioId } =
+        createServices(mode);
+      await auth.ensureAuthenticated();
 
-  const [{ orders }, portfolios, strategyBooks] = await Promise.all([
-    signalSigmaApi.getOpenOrders(portfolioId),
-    signalSigmaApi.getPortfolios(),
-    signalSigmaApi.getStrategyPositionBooks(getConfiguredStrategyIds()),
-  ]);
+      const [{ orders }, portfolios, strategyBooks] = await Promise.all([
+        signalSigmaApi.getOpenOrders(portfolioId),
+        signalSigmaApi.getPortfolios(),
+        signalSigmaApi.getStrategyPositionBooks(getConfiguredStrategyIds()),
+      ]);
 
-  const portfolio = portfolios.portfolios.find((p) => p.id === portfolioId);
-  if (!portfolio) {
-    throw new Error(`Portfolio ${portfolioId} not found`);
-  }
+      const portfolio = portfolios.portfolios.find((p) => p.id === portfolioId);
+      if (!portfolio) {
+        throw new Error(`Portfolio ${portfolioId} not found`);
+      }
 
-  const ownershipBySymbol = buildOwnershipBySymbol(
-    portfolio.tickers,
-    strategyBooks
+      const ownershipBySymbol = buildOwnershipBySymbol(
+        portfolio.tickers,
+        strategyBooks
+      );
+      const pending = orders.filter((o) => o.status === 'PENDING');
+      const buySymbols = pending
+        .filter((o) => o.direction === 'BUY')
+        .map((o) => o.symbol);
+
+      let quotesOk = true;
+      let quotesMessage = 'ok';
+      let quotes = new Map<
+        string,
+        {
+          last: number | null;
+          bid: number | null;
+          ask: number | null;
+          symbol: string;
+        }
+      >();
+
+      try {
+        quotes = await tradierApi.getQuotes(buySymbols);
+      } catch (error) {
+        quotesOk = false;
+        quotesMessage = error instanceof Error ? error.message : String(error);
+      }
+
+      const enriched = pending.map((order) => {
+        const decision = evaluateOpenOrder(order, quotes, ownershipBySymbol);
+        return {
+          ...order,
+          strategy: decision.strategy,
+          ownershipPrice: decision.ownershipPrice,
+          marketPrice: decision.marketPrice,
+          eligible: decision.place,
+          skipReason: decision.place ? null : decision.reason,
+        };
+      });
+
+      return {
+        mode,
+        orders: enriched,
+        pendingCount: pending.length,
+        eligibleCount: enriched.filter((o) => o.eligible).length,
+        quotesOk,
+        quotesMessage,
+      };
+    }
   );
-  const pending = orders.filter((o) => o.status === 'PENDING');
-  const buySymbols = pending
-    .filter((o) => o.direction === 'BUY')
-    .map((o) => o.symbol);
-
-  let quotesOk = true;
-  let quotesMessage = 'ok';
-  let quotes = new Map<
-    string,
-    { last: number | null; bid: number | null; ask: number | null; symbol: string }
-  >();
-
-  try {
-    quotes = await tradierApi.getQuotes(buySymbols);
-  } catch (error) {
-    quotesOk = false;
-    quotesMessage = error instanceof Error ? error.message : String(error);
-  }
-
-  const enriched = pending.map((order) => {
-    const decision = evaluateOpenOrder(order, quotes, ownershipBySymbol);
-    return {
-      ...order,
-      strategy: decision.strategy,
-      ownershipPrice: decision.ownershipPrice,
-      marketPrice: decision.marketPrice,
-      eligible: decision.place,
-      skipReason: decision.place ? null : decision.reason,
-    };
-  });
-
-  return {
-    mode,
-    orders: enriched,
-    pendingCount: pending.length,
-    eligibleCount: enriched.filter((o) => o.eligible).length,
-    quotesOk,
-    quotesMessage,
-  };
 }
 
 async function buildPortfolio(mode: TradingMode) {
@@ -369,47 +388,61 @@ async function buildPortfolio(mode: TradingMode) {
 }
 
 async function buildPositions(mode: TradingMode) {
-  const { auth, signalSigmaApi, tradierApi, portfolioId, tradier } =
-    createServices(mode);
-  await auth.ensureAuthenticated();
+  return deskResponseCache.getOrSet(
+    `positions:${mode}`,
+    POSITIONS_RESPONSE_TTL_MS,
+    async () => {
+      const { auth, signalSigmaApi, tradierApi, portfolioId, tradier } =
+        createServices(mode);
+      await auth.ensureAuthenticated();
 
-  const [brokerPositions, balances, portfolios, openOrders, strategyBooks] =
-    await Promise.all([
-      tradierApi.getPositions(),
-      tradierApi.getBalances(),
-      signalSigmaApi.getPortfolios(),
-      signalSigmaApi.getOpenOrders(portfolioId),
-      signalSigmaApi.getStrategyPositionBooks(getConfiguredStrategyIds()),
-    ]);
+      const [brokerPositions, balances, portfolios, openOrders, strategyBooks] =
+        await Promise.all([
+          tradierApi.getPositions(),
+          tradierApi.getBalances(),
+          signalSigmaApi.getPortfolios(),
+          signalSigmaApi.getOpenOrders(portfolioId),
+          signalSigmaApi.getStrategyPositionBooks(getConfiguredStrategyIds()),
+        ]);
 
-  const portfolio = portfolios.portfolios.find((p) => p.id === portfolioId);
-  const signalTickers = portfolio?.tickers ?? [];
-  const pendingOrders = openOrders.orders.filter((o) => o.status === 'PENDING');
-  const ownershipBySymbol = buildOwnershipBySymbol(signalTickers, strategyBooks);
+      const portfolio = portfolios.portfolios.find((p) => p.id === portfolioId);
+      const signalTickers = portfolio?.tickers ?? [];
+      const pendingOrders = openOrders.orders.filter(
+        (o) => o.status === 'PENDING'
+      );
+      const ownershipBySymbol = buildOwnershipBySymbol(
+        signalTickers,
+        strategyBooks
+      );
 
-  return {
-    mode: tradier.mode,
-    accountId: tradier.accountId,
-    portfolioId,
-    balances,
-    brokerPositions,
-    signalPositions: signalTickers.map((t) => {
-      const ownership = ownershipBySymbol.get(t.symbol.toUpperCase());
       return {
-        symbol: t.symbol,
-        name: t.name,
-        amount: t.amount,
-        targetAmount: t.targetAmount,
-        lastPrice: t.lastPrice,
-        ownershipPrice: ownership?.ownershipPrice ?? t.ownershipPrice,
-        strategy: ownership?.strategy || t.customGroup || null,
-        value: t.value,
-        percent: t.percent,
+        mode: tradier.mode,
+        accountId: tradier.accountId,
+        portfolioId,
+        balances,
+        brokerPositions,
+        signalPositions: signalTickers.map((t) => {
+          const ownership = ownershipBySymbol.get(t.symbol.toUpperCase());
+          return {
+            symbol: t.symbol,
+            name: t.name,
+            amount: t.amount,
+            targetAmount: t.targetAmount,
+            lastPrice: t.lastPrice,
+            ownershipPrice: ownership?.ownershipPrice ?? t.ownershipPrice,
+            strategy: ownership?.strategy || t.customGroup || null,
+            value: t.value,
+            percent: t.percent,
+          };
+        }),
+        pendingOrderCount: pendingOrders.length,
+        signalPortfolioValue: signalTickers.reduce(
+          (sum, t) => sum + (t.value || 0),
+          0
+        ),
       };
-    }),
-    pendingOrderCount: pendingOrders.length,
-    signalPortfolioValue: signalTickers.reduce((sum, t) => sum + (t.value || 0), 0),
-  };
+    }
+  );
 }
 
 async function buildPerformance(mode: TradingMode) {
@@ -508,6 +541,9 @@ async function runJob(kind: JobKind, mode: TradingMode): Promise<JobState> {
         });
       }
     }
+
+    invalidateSignalSigmaCache();
+    deskResponseCache.invalidate();
 
     currentJob = {
       ...currentJob,
