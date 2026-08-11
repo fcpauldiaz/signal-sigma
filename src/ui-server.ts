@@ -279,8 +279,8 @@ async function buildStatus(mode: TradingMode) {
     modes: modeSummary(),
     execution: getExecutionSettings(),
     schedules: {
-      rebalance: process.env.REBALANCE_SCHEDULE || '0 14 * * 2',
-      orders: process.env.ORDER_SCHEDULE || '0 14-20 * * 2',
+      rebalance: process.env.REBALANCE_SCHEDULE || '0 14 * * 3',
+      orders: process.env.ORDER_SCHEDULE || '0 14-20 * * 3',
       // Jobs run via Coolify scheduled tasks; in-app node-cron stays off.
       source: 'coolify',
       schedulerEnabled: false,
