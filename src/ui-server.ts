@@ -20,6 +20,7 @@ import {
 } from './utils/tradierConfig';
 import {
   buildOwnershipBySymbol,
+  buildStrategyLabelBySymbol,
   evaluateOpenOrder,
   getConfiguredStrategyIds,
 } from './utils/openOrderEligibility';
@@ -313,6 +314,10 @@ async function buildOrders(mode: TradingMode) {
         portfolio.tickers,
         strategyBooks
       );
+      const strategyLabelBySymbol = buildStrategyLabelBySymbol(
+        portfolio.tickers,
+        strategyBooks
+      );
       const pending = orders.filter((o) => o.status === 'PENDING');
       const buySymbols = pending
         .filter((o) => o.direction === 'BUY')
@@ -338,7 +343,12 @@ async function buildOrders(mode: TradingMode) {
       }
 
       const enriched = pending.map((order) => {
-        const decision = evaluateOpenOrder(order, quotes, ownershipBySymbol);
+        const decision = evaluateOpenOrder(
+          order,
+          quotes,
+          ownershipBySymbol,
+          strategyLabelBySymbol
+        );
         return {
           ...order,
           strategy: decision.strategy,

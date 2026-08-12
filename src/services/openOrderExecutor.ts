@@ -3,6 +3,7 @@ import { TradierApi } from './tradierApi';
 import { placeOrders } from '../utils/orderPlacer';
 import {
   buildOwnershipBySymbol,
+  buildStrategyLabelBySymbol,
   evaluateOpenOrder,
   getConfiguredStrategyIds,
 } from '../utils/openOrderEligibility';
@@ -40,6 +41,10 @@ export async function executeOpenOrders(options: {
     portfolio.tickers,
     strategyBooks
   );
+  const strategyLabelBySymbol = buildStrategyLabelBySymbol(
+    portfolio.tickers,
+    strategyBooks
+  );
   const pending = orders.filter((order) => order.status === 'PENDING');
 
   console.log(`Found ${pending.length} pending open order(s)`);
@@ -68,7 +73,12 @@ export async function executeOpenOrders(options: {
   let skippedCount = 0;
 
   for (const order of pending) {
-    const decision = evaluateOpenOrder(order, quotes, ownershipBySymbol);
+    const decision = evaluateOpenOrder(
+      order,
+      quotes,
+      ownershipBySymbol,
+      strategyLabelBySymbol
+    );
     if (!decision.place) {
       skippedCount += 1;
       console.log(
@@ -81,7 +91,7 @@ export async function executeOpenOrders(options: {
       signalSigmaOrderId: order.id,
       symbol: order.symbol,
       side: order.direction === 'BUY' ? 'buy' : 'sell',
-      quantity: Math.trunc(order.amount),
+      quantity: decision.quantity,
       signalPrice: decision.ownershipPrice,
     });
   }

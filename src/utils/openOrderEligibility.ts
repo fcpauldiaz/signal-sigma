@@ -19,6 +19,7 @@ export type OrderDecision =
       ownershipPrice: number;
       strategy: string;
       marketPrice: number | null;
+      quantity: number;
     }
   | {
       place: false;
@@ -26,6 +27,7 @@ export type OrderDecision =
       ownershipPrice: number | null;
       strategy: string | null;
       marketPrice: number | null;
+      quantity: number;
     };
 
 const DEFAULT_STRATEGY_IDS = [
@@ -42,6 +44,11 @@ export function getConfiguredStrategyIds(): string[] {
     .split(',')
     .map((id) => id.trim())
     .filter(Boolean);
+}
+
+/** Signal Sigma encodes SELL size as a negative amount. */
+export function orderQuantity(order: SignalSigmaOpenOrder): number {
+  return Math.abs(Math.trunc(order.amount));
 }
 
 export function buildOwnershipBySymbol(
@@ -101,6 +108,36 @@ export function buildOwnershipBySymbol(
   return map;
 }
 
+/**
+ * Strategy labels for display / SELL enrichment — includes portfolio groups and
+ * strategy books even when ownership price is unavailable (common on exits).
+ */
+export function buildStrategyLabelBySymbol(
+  portfolioTickers: Ticker[],
+  strategyBooks: StrategyPositionBook[]
+): Map<string, string> {
+  const map = new Map<string, string>();
+
+  for (const book of strategyBooks) {
+    for (const ticker of book.tickers) {
+      map.set(ticker.symbol.toUpperCase(), book.title);
+    }
+  }
+
+  for (const ticker of portfolioTickers) {
+    const symbol = ticker.symbol.toUpperCase();
+    if (map.has(symbol)) {
+      continue;
+    }
+    const group = ticker.customGroup?.trim();
+    if (group && group.toLowerCase() !== 'cash') {
+      map.set(symbol, group);
+    }
+  }
+
+  return map;
+}
+
 function normalizeStrategyName(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -117,26 +154,40 @@ function findBookContainingSymbol(
 export function evaluateOpenOrder(
   order: SignalSigmaOpenOrder,
   quotes: Map<string, TradierQuote>,
-  ownershipBySymbol: Map<string, OwnershipLookup>
+  ownershipBySymbol: Map<string, OwnershipLookup>,
+  strategyLabelBySymbol: Map<string, string> = new Map()
 ): OrderDecision {
-  const quantity = Math.trunc(order.amount);
+  const quantity = orderQuantity(order);
+  const symbol = order.symbol.toUpperCase();
+  const position = ownershipBySymbol.get(symbol);
+  const strategyLabel =
+    position?.strategy || strategyLabelBySymbol.get(symbol) || null;
+
   if (quantity <= 0) {
     return {
       place: false,
       reason: 'quantity is zero',
       ownershipPrice: null,
-      strategy: null,
+      strategy: strategyLabel,
       marketPrice: null,
+      quantity,
     };
   }
 
   if (order.direction === 'SELL') {
-    const position = ownershipBySymbol.get(order.symbol.toUpperCase());
+    const ownershipPrice =
+      position?.ownershipPrice && position.ownershipPrice > 0
+        ? position.ownershipPrice
+        : order.price > 0
+          ? order.price
+          : null;
+
     return {
       place: true,
-      ownershipPrice: position?.ownershipPrice ?? order.price,
-      strategy: position?.strategy ?? '—',
+      ownershipPrice: ownershipPrice ?? order.price,
+      strategy: strategyLabel || '—',
       marketPrice: null,
+      quantity,
     };
   }
 
@@ -145,19 +196,20 @@ export function evaluateOpenOrder(
       place: false,
       reason: `unsupported direction ${order.direction}`,
       ownershipPrice: null,
-      strategy: null,
+      strategy: strategyLabel,
       marketPrice: null,
+      quantity,
     };
   }
 
-  const position = ownershipBySymbol.get(order.symbol.toUpperCase());
   if (!position) {
     return {
       place: false,
       reason: 'no strategy ownership price',
       ownershipPrice: null,
-      strategy: null,
+      strategy: strategyLabel,
       marketPrice: null,
+      quantity,
     };
   }
 
@@ -168,10 +220,11 @@ export function evaluateOpenOrder(
       ownershipPrice: position.ownershipPrice,
       strategy: position.strategy,
       marketPrice: null,
+      quantity,
     };
   }
 
-  const marketPrice = resolveQuotePrice(quotes.get(order.symbol.toUpperCase()));
+  const marketPrice = resolveQuotePrice(quotes.get(symbol));
   if (marketPrice === null) {
     return {
       place: false,
@@ -179,6 +232,7 @@ export function evaluateOpenOrder(
       ownershipPrice: position.ownershipPrice,
       strategy: position.strategy,
       marketPrice: null,
+      quantity,
     };
   }
 
@@ -189,6 +243,7 @@ export function evaluateOpenOrder(
       ownershipPrice: position.ownershipPrice,
       strategy: position.strategy,
       marketPrice,
+      quantity,
     };
   }
 
@@ -197,5 +252,6 @@ export function evaluateOpenOrder(
     ownershipPrice: position.ownershipPrice,
     strategy: position.strategy,
     marketPrice,
+    quantity,
   };
 }
