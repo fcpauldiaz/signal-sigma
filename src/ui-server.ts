@@ -613,6 +613,18 @@ export function startUiServer(): http.Server {
         return;
       }
 
+      if (
+        (pathname === '/privacy' || pathname === '/privacy.html') &&
+        req.method === 'GET'
+      ) {
+        serveStatic(
+          res,
+          path.join(__dirname, '..', 'privacy.html'),
+          'text/html'
+        );
+        return;
+      }
+
       if (pathname === '/api/auth/status' && req.method === 'GET') {
         sendJson(res, 200, {
           authEnabled: Boolean(ADMIN_PASSWORD),

@@ -22,5 +22,16 @@
         "resourceClass": "m-medium"
       }
     }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleTeamId": "GGGP7AV2E7",
+        "language": "en-US",
+        "sku": "signalsigma",
+        "companyName": "Pablo Diaz",
+        "metadataPath": "./store.config.json"
+      }
+    }
   }
 }
