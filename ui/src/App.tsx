@@ -555,7 +555,7 @@ function OrdersPage({
                     </td>
                     <td>{o.symbol}</td>
                     <td>{o.strategy || "—"}</td>
-                    <td>{o.amount}</td>
+                    <td>{o.quantity ?? Math.abs(o.amount)}</td>
                     <td>{money(o.ownershipPrice)}</td>
                     <td>{money(o.price)}</td>
                     <td>{money(o.marketPrice)}</td>

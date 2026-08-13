@@ -111,7 +111,26 @@ src/
   │   └── orderCalculator.ts   # Order difference calculation logic
   └── utils/
       └── orderPlacer.ts        # Shared order placement utility
+ui/                            # Vite React desk
+mobile/                        # Expo (React Native) desk for phone
 ```
+
+## Mobile (Expo)
+
+Personal phone app with the same Overview, Positions, Orders, and Performance views, plus paper/live, unlock, and trading actions. It talks to the deployed desk API (`https://signal-sigma.coolify.chapilabs.com` by default).
+
+1. Install [Expo Go](https://expo.dev/go) on your phone
+2. From the repo:
+
+```bash
+cd mobile
+pnpm install
+pnpm start
+```
+
+3. Scan the QR code in Expo Go and log in with `ADMIN_PASSWORD`
+
+Override the API URL with `EXPO_PUBLIC_API_URL` in `mobile/.env` if you are pointing at a local or staging server.
 
 ## Environment Variables
 

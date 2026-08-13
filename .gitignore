@@ -2,6 +2,10 @@ node_modules/
 dist/
 ui/node_modules/
 ui/dist/
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+mobile/build/
 data/
 .env
 *.log

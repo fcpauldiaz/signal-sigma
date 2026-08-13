@@ -62,8 +62,17 @@ const MIME: Record<string, string> = {
   '.woff2': 'font/woff2',
 };
 
+const CORS_HEADERS: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Trading-Mode',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+};
+
 function sendJson(res: http.ServerResponse, status: number, data: unknown): void {
-  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.writeHead(status, {
+    'Content-Type': 'application/json',
+    ...CORS_HEADERS,
+  });
   res.end(JSON.stringify(data));
 }
 
@@ -114,11 +123,11 @@ function serveStatic(
 ): void {
   fs.readFile(filePath, (err, data) => {
     if (err) {
-      res.writeHead(404);
+      res.writeHead(404, CORS_HEADERS);
       res.end('Not found');
       return;
     }
-    res.writeHead(200, { 'Content-Type': contentType });
+    res.writeHead(200, { 'Content-Type': contentType, ...CORS_HEADERS });
     res.end(data);
   });
 }
@@ -351,6 +360,7 @@ async function buildOrders(mode: TradingMode) {
         );
         return {
           ...order,
+          quantity: decision.quantity,
           strategy: decision.strategy,
           ownershipPrice: decision.ownershipPrice,
           marketPrice: decision.marketPrice,
@@ -597,6 +607,12 @@ export function startUiServer(): http.Server {
     const pathname = url.pathname;
 
     try {
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, CORS_HEADERS);
+        res.end();
+        return;
+      }
+
       if (pathname === '/api/auth/status' && req.method === 'GET') {
         sendJson(res, 200, {
           authEnabled: Boolean(ADMIN_PASSWORD),
@@ -711,7 +727,7 @@ export function startUiServer(): http.Server {
       const requestPath = pathname === '/' ? '/index.html' : pathname;
       const filePath = path.join(UI_DIST, requestPath);
       if (!filePath.startsWith(UI_DIST)) {
-        res.writeHead(403);
+        res.writeHead(403, CORS_HEADERS);
         res.end('Forbidden');
         return;
       }
@@ -728,7 +744,7 @@ export function startUiServer(): http.Server {
         return;
       }
 
-      res.writeHead(404);
+      res.writeHead(404, CORS_HEADERS);
       res.end(
         'UI not built. Run: cd ui && pnpm install && pnpm run build'
       );
