@@ -40,5 +40,6 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit"
   },
-  "private": true
+  "private": true,
+  "packageManager": "pnpm@10.26.1"
 }

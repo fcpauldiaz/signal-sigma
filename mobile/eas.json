@@ -18,6 +18,7 @@
       }
     },
     "production": {
+      "pnpm": "10.26.1",
       "ios": {
         "resourceClass": "m-medium"
       }
@@ -26,6 +27,8 @@
   "submit": {
     "production": {
       "ios": {
+        "appleId": "fcpauldiaz@icloud.com",
+        "ascAppId": "6801174770",
         "appleTeamId": "GGGP7AV2E7",
         "language": "en-US",
         "sku": "signalsigma",

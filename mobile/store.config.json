@@ -49,6 +49,7 @@
       "firstName": "Pablo",
       "lastName": "Diaz",
       "email": "pablo5_diaz@hotmail.com",
+      "phone": "5513287958",
       "demoRequired": true,
       "notes": "Personal companion to a self-hosted Signal Sigma / Tradier desk. Unlock with the desk password (email the developer for a current review password). Stay on Paper. Do not enable Live exec or Place orders on live. The API is https://signal-sigma.coolify.chapilabs.com."
     }
