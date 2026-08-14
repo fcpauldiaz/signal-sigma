@@ -117,7 +117,7 @@ mobile/                        # Expo (React Native) desk for phone
 
 ## Mobile (Expo)
 
-Personal phone app with the same Overview, Positions, Orders, and Performance views, plus paper/live, unlock, and trading actions. It talks to the deployed desk API (`https://signal-sigma.coolify.chapilabs.com` by default).
+Personal phone app with the same Overview, Positions, Orders, and Performance views, plus paper/live, unlock, and trading actions. It talks to the deployed desk API (`https://signal-sigma.chapilabs.com` by default).
 
 1. Install [Expo Go](https://expo.dev/go) on your phone
 2. From the repo:

@@ -151,7 +151,7 @@ export interface PerformanceResponse {
 
 const API_URL = (
   process.env.EXPO_PUBLIC_API_URL ??
-  "https://signal-sigma.coolify.chapilabs.com"
+  "https://signal-sigma.chapilabs.com"
 ).replace(/\/$/, "");
 
 const TOKEN_KEY = "signal_sigma_token";
@@ -334,4 +334,13 @@ export async function runRebalanceAndPlace(): Promise<{ job: JobState }> {
   const data = (await r.json()) as { error?: string; job?: JobState };
   if (!r.ok) throw new Error(data.error || data.job?.message || r.statusText);
   return data as { job: JobState };
+}
+
+export async function registerPushToken(token: string): Promise<void> {
+  const r = await fetch(`${API_URL}/api/push-token`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  if (!r.ok) throw new Error(await parseError(r));
 }

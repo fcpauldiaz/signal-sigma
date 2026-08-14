@@ -15,6 +15,7 @@ import * as SystemUI from "expo-system-ui";
 import { useEffect } from "react";
 import "react-native-reanimated";
 import { SessionProvider } from "../src/session";
+import { listenForNotificationTaps } from "../src/notifications";
 import { colors } from "../src/theme";
 
 export { ErrorBoundary } from "expo-router";
@@ -57,6 +58,8 @@ export default function RootLayout() {
       void SplashScreen.hideAsync();
     }
   }, [loaded]);
+
+  useEffect(() => listenForNotificationTaps(), []);
 
   if (!loaded) return null;
 

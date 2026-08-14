@@ -33,7 +33,7 @@
         "language": "en-US",
         "sku": "signalsigma",
         "companyName": "Pablo Diaz",
-        "metadataPath": "./store.config.json"
+        "groups": ["Me"]
       }
     }
   }

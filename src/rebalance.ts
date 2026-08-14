@@ -4,6 +4,7 @@ import { SignalSigmaScraper } from './services/signalSigmaScraper';
 import { SignalSigmaApi } from './services/signalSigmaApi';
 import { TradierApi } from './services/tradierApi';
 import { executeOpenOrders } from './services/openOrderExecutor';
+import { notifyDeskJob, notifyRebalance } from './utils/deskNotify';
 import {
   getSignalSigmaPortfolioId,
   resolveModeFromArgv,
@@ -32,6 +33,7 @@ async function main() {
 
   if (!result.success) {
     console.error(`\n✗ Rebalancing failed: ${result.error || 'Unknown error'}`);
+    await notifyRebalance(mode, false, result.error);
     process.exit(1);
   }
 
@@ -39,6 +41,7 @@ async function main() {
 
   if (!isExecutionEnabled(mode)) {
     console.log(`${mode} order execution is disabled — skipping place step.`);
+    await notifyRebalance(mode, true);
     process.exit(0);
   }
 
@@ -56,10 +59,23 @@ async function main() {
   console.log(
     `\n✓ Rebalancing and order placement completed. placed=${execution.placedCount} skipped=${execution.skippedCount} failed=${execution.failedCount} confirmed=${execution.confirmedCount}`
   );
+  await notifyDeskJob({
+    kind: 'rebalance-and-place',
+    mode,
+    status: 'success',
+    result: execution,
+  });
   process.exit(0);
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
+  const message = error instanceof Error ? error.message : String(error);
   console.error('Fatal error:', error);
+  await notifyDeskJob({
+    kind: 'rebalance-and-place',
+    mode: resolveModeFromArgv(),
+    status: 'error',
+    message,
+  });
   process.exit(1);
 });

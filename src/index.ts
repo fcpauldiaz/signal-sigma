@@ -3,6 +3,7 @@ import { SignalSigmaAuth } from './services/signalSigmaAuth';
 import { SignalSigmaApi } from './services/signalSigmaApi';
 import { TradierApi } from './services/tradierApi';
 import { executeOpenOrders } from './services/openOrderExecutor';
+import { notifyDeskJob, notifyOrders } from './utils/deskNotify';
 import {
   getSignalSigmaPortfolioId,
   resolveModeFromArgv,
@@ -39,9 +40,17 @@ async function main() {
   console.log(
     `\nOrder placement completed. placed=${result.placedCount} skipped=${result.skippedCount} failed=${result.failedCount} confirmed=${result.confirmedCount}`
   );
+  await notifyOrders(mode, result, { onlyIfActivity: true });
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
+  const message = error instanceof Error ? error.message : String(error);
   console.error('Fatal error:', error);
+  await notifyDeskJob({
+    kind: 'place-orders',
+    mode: resolveModeFromArgv(),
+    status: 'error',
+    message,
+  });
   process.exit(1);
 });

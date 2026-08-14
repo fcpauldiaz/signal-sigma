@@ -37,9 +37,9 @@
         ],
         "releaseNotes": "First release: overview, positions, orders, performance, paper/live, and desk actions.",
         "promoText": "Your Signal Sigma book and Tradier desk, on the phone.",
-        "marketingUrl": "https://signal-sigma.coolify.chapilabs.com",
+        "marketingUrl": "https://signal-sigma.chapilabs.com",
         "supportUrl": "https://github.com/fcpauldiaz/signal-sigma",
-        "privacyPolicyUrl": "https://signal-sigma.coolify.chapilabs.com/privacy"
+        "privacyPolicyUrl": "https://signal-sigma.chapilabs.com/privacy"
       }
     },
     "release": {
@@ -51,7 +51,7 @@
       "email": "pablo5_diaz@hotmail.com",
       "phone": "5513287958",
       "demoRequired": false,
-      "notes": "Personal companion to a self-hosted Signal Sigma / Tradier desk. Login is not required. Stay on Paper. Do not enable Live exec or Place orders on live. The API is https://signal-sigma.coolify.chapilabs.com."
+      "notes": "Personal companion to a self-hosted Signal Sigma / Tradier desk. Login is not required. Stay on Paper. Do not enable Live exec or Place orders on live. The API is https://signal-sigma.chapilabs.com."
     }
   }
 }

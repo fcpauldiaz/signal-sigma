@@ -4,6 +4,7 @@ import { SignalSigmaScraper } from './signalSigmaScraper';
 import { SignalSigmaApi } from './signalSigmaApi';
 import { TradierApi } from './tradierApi';
 import { executeOpenOrders } from './openOrderExecutor';
+import { notifyDeskJob, notifyOrders, notifyRebalance } from '../utils/deskNotify';
 import { isExecutionEnabled } from '../utils/executionSettings';
 import type { TradingMode } from '../utils/tradierConfig';
 
@@ -56,16 +57,22 @@ export class UnifiedScheduler {
 
         if (result.success) {
           console.log('[Scheduled] Rebalancing completed successfully');
+          await notifyRebalance(this.mode, true);
         } else {
           console.error(
             `[Scheduled] Rebalancing failed: ${result.error || 'Unknown error'}`
           );
+          await notifyRebalance(this.mode, false, result.error);
         }
       } catch (error) {
-        console.error(
-          `[Scheduled] Rebalancing error:`,
-          error instanceof Error ? error.message : error
-        );
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`[Scheduled] Rebalancing error:`, message);
+        await notifyDeskJob({
+          kind: 'rebalance',
+          mode: this.mode,
+          status: 'error',
+          message,
+        });
       }
     });
 
@@ -91,11 +98,16 @@ export class UnifiedScheduler {
         console.log(
           `[Scheduled] Done (${tradierApi.mode}). placed=${result.placedCount} skipped=${result.skippedCount} failed=${result.failedCount} confirmed=${result.confirmedCount}`
         );
+        await notifyOrders(this.mode, result, { onlyIfActivity: true });
       } catch (error) {
-        console.error(
-          `[Scheduled] Order placement error:`,
-          error instanceof Error ? error.message : error
-        );
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`[Scheduled] Order placement error:`, message);
+        await notifyDeskJob({
+          kind: 'place-orders',
+          mode: this.mode,
+          status: 'error',
+          message,
+        });
       }
     });
 

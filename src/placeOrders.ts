@@ -7,6 +7,7 @@ import {
   getSignalSigmaPortfolioId,
   resolveModeFromArgv,
 } from './utils/tradierConfig';
+import { notifyDeskJob, notifyOrders } from './utils/deskNotify';
 import { isExecutionEnabled } from './utils/executionSettings';
 
 dotenv.config();
@@ -40,10 +41,18 @@ async function main() {
   console.log(
     `\n✓ Order placement completed. placed=${result.placedCount} skipped=${result.skippedCount} failed=${result.failedCount} confirmed=${result.confirmedCount}`
   );
+  await notifyOrders(mode, result, { onlyIfActivity: true });
   process.exit(0);
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
+  const message = error instanceof Error ? error.message : String(error);
   console.error('Fatal error:', error);
+  await notifyDeskJob({
+    kind: 'place-orders',
+    mode: resolveModeFromArgv(),
+    status: 'error',
+    message,
+  });
   process.exit(1);
 });

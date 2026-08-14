@@ -22,6 +22,7 @@ import {
   setTradingMode,
   type TradingMode,
 } from "./api";
+import { registerDeskPush } from "./notifications";
 
 type Session = {
   ready: boolean;
@@ -68,6 +69,16 @@ function SessionInner({ children }: { children: ReactNode }) {
       setToken(null);
     }
   }, [authEnabled, authenticated, token]);
+
+  useEffect(() => {
+    if (!ready || needsLogin || !authenticated) return;
+    void registerDeskPush().catch((error) => {
+      console.warn(
+        "Push registration skipped:",
+        error instanceof Error ? error.message : error
+      );
+    });
+  }, [ready, needsLogin, authenticated]);
 
   const value = useMemo<Session>(
     () => ({

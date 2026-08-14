@@ -29,6 +29,11 @@ import {
   isExecutionEnabled,
   setExecutionSettings,
 } from './utils/executionSettings';
+import {
+  isExpoPushToken,
+  notifyDeskJob,
+  registerPushToken,
+} from './utils/deskNotify';
 
 const UI_PORT = parseInt(process.env.UI_PORT || '3000', 10);
 const UI_DIST = path.join(__dirname, '..', 'ui', 'dist');
@@ -589,6 +594,13 @@ async function runJob(kind: JobKind, mode: TradingMode): Promise<JobState> {
       message: `completed (${mode})`,
       result: executionResult,
     };
+    await notifyDeskJob({
+      kind,
+      mode,
+      status: 'success',
+      message: currentJob.message,
+      result: executionResult,
+    });
     return currentJob;
   } catch (error) {
     currentJob = {
@@ -597,6 +609,12 @@ async function runJob(kind: JobKind, mode: TradingMode): Promise<JobState> {
       finishedAt: new Date().toISOString(),
       message: error instanceof Error ? error.message : String(error),
     };
+    await notifyDeskJob({
+      kind,
+      mode,
+      status: 'error',
+      message: currentJob.message,
+    });
     return currentJob;
   }
 }
@@ -654,6 +672,18 @@ export function startUiServer(): http.Server {
       }
 
       if (pathname.startsWith('/api/') && !requireAuth(req, res)) {
+        return;
+      }
+
+      if (pathname === '/api/push-token' && req.method === 'POST') {
+        const body = await parseBody(req);
+        const token = String(body.token || '');
+        if (!isExpoPushToken(token)) {
+          sendJson(res, 400, { error: 'Invalid Expo push token' });
+          return;
+        }
+        registerPushToken(token);
+        sendJson(res, 200, { ok: true });
         return;
       }
 
