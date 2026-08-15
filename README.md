@@ -112,25 +112,11 @@ src/
   └── utils/
       └── orderPlacer.ts        # Shared order placement utility
 ui/                            # Vite React desk
-mobile/                        # Expo (React Native) desk for phone
 ```
 
-## Mobile (Expo)
+## Mobile
 
-Personal phone app with the same Overview, Positions, Orders, and Performance views, plus paper/live, unlock, and trading actions. It talks to the deployed desk API (`https://signal-sigma.chapilabs.com` by default).
-
-1. Install [Expo Go](https://expo.dev/go) on your phone
-2. From the repo:
-
-```bash
-cd mobile
-pnpm install
-pnpm start
-```
-
-3. Scan the QR code in Expo Go and log in with `ADMIN_PASSWORD`
-
-Override the API URL with `EXPO_PUBLIC_API_URL` in `mobile/.env` if you are pointing at a local or staging server.
+The iOS desk lives in a separate repo: [fcpauldiaz/signal-sigma-mobile](https://github.com/fcpauldiaz/signal-sigma-mobile). It talks to this desk API at `https://signal-sigma.chapilabs.com`.
 
 ## Environment Variables
 
