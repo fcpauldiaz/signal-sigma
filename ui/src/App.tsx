@@ -248,6 +248,10 @@ function CumulativeChart({ series }: { series: CumulativePoint[] }) {
   const innerH = h - pad.t - pad.b;
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
+  useEffect(() => {
+    setSelectedIndex(null);
+  }, [series]);
+
   const points = useMemo(() => {
     if (!series.length) return null;
     const ys = series.map((p) => p.cumulative);
@@ -307,11 +311,7 @@ function CumulativeChart({ series }: { series: CumulativePoint[] }) {
         className="chart-svg"
         viewBox={`0 0 ${w} ${h}`}
         role="img"
-        onClick={(e) => {
-          const el = e.target as Element;
-          if (el.closest(".chart-dot-hit")) return;
-          selectNearest(e.clientX, e.currentTarget);
-        }}
+        onClick={(e) => selectNearest(e.clientX, e.currentTarget)}
       >
         <title>Cumulative realized P&amp;L</title>
         <g className="chart-grid">
@@ -348,10 +348,6 @@ function CumulativeChart({ series }: { series: CumulativePoint[] }) {
                 role="button"
                 tabIndex={0}
                 aria-label={`${c.symbol} ${c.date} ${money(c.gainLoss)}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  togglePoint(i);
-                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
