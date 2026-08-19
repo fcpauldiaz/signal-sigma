@@ -21,6 +21,7 @@ import {
 import {
   buildOwnershipBySymbol,
   buildStrategyLabelBySymbol,
+  cashRowsLast,
   evaluateOpenOrder,
   getConfiguredStrategyIds,
 } from './utils/openOrderEligibility';
@@ -466,20 +467,23 @@ async function buildPositions(mode: TradingMode) {
     portfolioId,
     balances,
     brokerPositions: enrichedBrokerPositions,
-    signalPositions: signalTickers.map((t) => {
-      const ownership = ownershipBySymbol.get(t.symbol.toUpperCase());
-      return {
-        symbol: t.symbol,
-        name: t.name,
-        amount: t.amount,
-        targetAmount: t.targetAmount,
-        lastPrice: t.lastPrice,
-        ownershipPrice: ownership?.ownershipPrice ?? t.ownershipPrice,
-        strategy: ownership?.strategy || t.customGroup || null,
-        value: t.value,
-        percent: t.percent,
-      };
-    }),
+    signalPositions: cashRowsLast(
+      signalTickers.map((t) => {
+        const ownership = ownershipBySymbol.get(t.symbol.toUpperCase());
+        return {
+          symbol: t.symbol,
+          name: t.name,
+          amount: t.amount,
+          targetAmount: t.targetAmount,
+          lastPrice: t.lastPrice,
+          ownershipPrice: ownership?.ownershipPrice ?? t.ownershipPrice,
+          strategy: ownership?.strategy || t.customGroup || null,
+          systemClassification: t.systemClassification,
+          value: t.value,
+          percent: t.percent,
+        };
+      })
+    ),
     pendingOrderCount: pendingOrders.length,
     signalPortfolioValue: signalTickers.reduce(
       (sum, t) => sum + (t.value || 0),

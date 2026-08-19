@@ -51,6 +51,40 @@ export function orderQuantity(order: SignalSigmaOpenOrder): number {
   return Math.abs(Math.trunc(order.amount));
 }
 
+export function isCashBookRow(input: {
+  symbol: string;
+  systemClassification?: string | null;
+  customGroup?: string | null;
+  strategy?: string | null;
+}): boolean {
+  if (input.systemClassification?.trim().toLowerCase() === 'cash') {
+    return true;
+  }
+  const group = (input.customGroup || input.strategy || '')
+    .trim()
+    .toLowerCase();
+  if (group === 'cash') {
+    return true;
+  }
+  const symbol = input.symbol.trim().toUpperCase();
+  return symbol.startsWith('TOTAL ');
+}
+
+export function cashRowsLast<T extends Parameters<typeof isCashBookRow>[0]>(
+  rows: T[]
+): T[] {
+  const holdings: T[] = [];
+  const cash: T[] = [];
+  for (const row of rows) {
+    if (isCashBookRow(row)) {
+      cash.push(row);
+    } else {
+      holdings.push(row);
+    }
+  }
+  return [...holdings, ...cash];
+}
+
 export function buildOwnershipBySymbol(
   portfolioTickers: Ticker[],
   strategyBooks: StrategyPositionBook[]
@@ -65,7 +99,7 @@ export function buildOwnershipBySymbol(
   for (const ticker of portfolioTickers) {
     const symbol = ticker.symbol.toUpperCase();
     const group = ticker.customGroup?.trim() || '';
-    if (!group || group.toLowerCase() === 'cash') {
+    if (!group || isCashBookRow(ticker)) {
       continue;
     }
 

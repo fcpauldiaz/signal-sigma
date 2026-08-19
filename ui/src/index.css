@@ -420,6 +420,14 @@ table.data .pl.neg {
   color: var(--color-negative);
 }
 
+table.data tfoot td {
+  border-bottom: none;
+  border-top: var(--rule);
+  background: var(--color-elevated);
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
 .chart-wrap {
   width: 100%;
   min-width: 0;
