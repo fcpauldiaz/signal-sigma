@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import {
   fetchAuthStatus,
   fetchOrders,
@@ -62,6 +62,81 @@ function plClass(n: number | null | undefined): "" | "pos" | "neg" {
   return n > 0 ? "pos" : "neg";
 }
 
+type DeskAction = "rebalance" | "place" | "both";
+
+function deskActionCopy(action: DeskAction, mode: TradingMode) {
+  switch (action) {
+    case "rebalance":
+      return {
+        title: "Rebalance",
+        confirm: "Rebalance",
+        body: `Recalculate ${mode} targets. No orders are sent.`,
+      };
+    case "place":
+      return {
+        title: "Place orders",
+        confirm: "Place orders",
+        body: `Send eligible pending orders to Tradier ${mode}.`,
+      };
+    case "both":
+      return {
+        title: "Rebalance + place",
+        confirm: "Rebalance + place",
+        body: `Recalculate ${mode} targets, then send eligible orders to Tradier.`,
+      };
+  }
+}
+
+function useEscape(open: boolean, onClose: () => void) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+}
+
+function Dialog({
+  open,
+  title,
+  kicker,
+  kickerLive,
+  labelledBy,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  title: string;
+  kicker?: string;
+  kickerLive?: boolean;
+  labelledBy: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  useEscape(open, onClose);
+  if (!open) return null;
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={labelledBy}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {kicker ? (
+          <p className={`modal-kicker ${kickerLive ? "live" : ""}`}>{kicker}</p>
+        ) : null}
+        <h2 id={labelledBy}>{title}</h2>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function LoginModal({
   open,
   onClose,
@@ -81,53 +156,101 @@ function LoginModal({
     },
   });
 
-  if (!open) return null;
+  return (
+    <Dialog
+      open={open}
+      title="Unlock desk"
+      labelledBy="login-title"
+      onClose={onClose}
+    >
+      <p>Password required for trading actions.</p>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          mut.mutate();
+        }}
+      >
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Password"
+          autoFocus
+        />
+        {mut.isError && (
+          <p className="error-msg">{(mut.error as Error).message}</p>
+        )}
+        <div className="actions" style={{ marginBottom: 0 }}>
+          <button type="submit" disabled={mut.isPending || !password}>
+            {mut.isPending ? "…" : "Unlock"}
+          </button>
+          <button type="button" onClick={onClose}>
+            Cancel
+          </button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+function ConfirmModal({
+  action,
+  mode,
+  onConfirm,
+  onClose,
+}: {
+  action: DeskAction | null;
+  mode: TradingMode;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  const copy = action ? deskActionCopy(action, mode) : null;
+  const live = mode === "live";
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Unlock desk</h2>
-        <p>Password required for trading actions.</p>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            mut.mutate();
-          }}
-        >
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
-            autoFocus
-          />
-          {mut.isError && (
-            <p className="error-msg">{(mut.error as Error).message}</p>
-          )}
+    <Dialog
+      open={Boolean(copy)}
+      title={copy?.title ?? ""}
+      kicker={copy ? mode : undefined}
+      kickerLive={live}
+      labelledBy="confirm-title"
+      onClose={onClose}
+    >
+      {copy && (
+        <>
+          <p>{copy.body}</p>
           <div className="actions" style={{ marginBottom: 0 }}>
-            <button type="submit" disabled={mut.isPending || !password}>
-              {mut.isPending ? "…" : "Unlock"}
+            <button
+              type="button"
+              className={live ? "confirm-live" : undefined}
+              autoFocus
+              onClick={onConfirm}
+            >
+              {copy.confirm}
             </button>
             <button type="button" onClick={onClose}>
               Cancel
             </button>
           </div>
-        </form>
-      </div>
-    </div>
+        </>
+      )}
+    </Dialog>
   );
 }
 
-function CumulativeChart({
-  series,
-}: {
-  series: PerformanceResponse["cumulativeSeries"];
-}) {
+type CumulativePoint = PerformanceResponse["cumulativeSeries"][number];
+
+function CumulativeChart({ series }: { series: CumulativePoint[] }) {
   const w = 640;
   const h = 220;
   const pad = { t: 16, r: 16, b: 28, l: 52 };
   const innerW = w - pad.l - pad.r;
   const innerH = h - pad.t - pad.b;
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    setSelectedIndex(null);
+  }, [series]);
 
   const points = useMemo(() => {
     if (!series.length) return null;
@@ -146,6 +269,10 @@ function CumulativeChart({
     return { coords, line, area, zeroY, minY, maxY };
   }, [series, innerH, innerW, pad.l, pad.r, pad.t, pad.b]);
 
+  const togglePoint = (i: number) => {
+    setSelectedIndex((cur) => (cur === i ? null : i));
+  };
+
   if (!points) {
     return <p>No closed trades yet.</p>;
   }
@@ -153,10 +280,39 @@ function CumulativeChart({
   const ticks = [points.minY, 0, points.maxY].filter(
     (v, i, a) => a.indexOf(v) === i
   );
+  const selected =
+    selectedIndex != null && selectedIndex < points.coords.length
+      ? points.coords[selectedIndex]
+      : undefined;
+
+  const selectNearest = (clientX: number, svg: SVGSVGElement) => {
+    const pt = svg.createSVGPoint();
+    pt.x = clientX;
+    pt.y = 0;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return;
+    const loc = pt.matrixTransform(ctm.inverse());
+    if (loc.x < pad.l || loc.x > w - pad.r) return;
+    let nearest = 0;
+    let best = Infinity;
+    for (let i = 0; i < points.coords.length; i++) {
+      const d = Math.abs(points.coords[i].x - loc.x);
+      if (d < best) {
+        best = d;
+        nearest = i;
+      }
+    }
+    togglePoint(nearest);
+  };
 
   return (
     <div className="chart-wrap">
-      <svg className="chart-svg" viewBox={`0 0 ${w} ${h}`} role="img">
+      <svg
+        className="chart-svg"
+        viewBox={`0 0 ${w} ${h}`}
+        role="img"
+        onClick={(e) => selectNearest(e.clientX, e.currentTarget)}
+      >
         <title>Cumulative realized P&amp;L</title>
         <g className="chart-grid">
           {ticks.map((t) => {
@@ -174,6 +330,38 @@ function CumulativeChart({
         </g>
         <polygon className="chart-area" points={points.area} />
         <polyline className="chart-line" points={points.line} />
+        {points.coords.map((c, i) => {
+          const isSelected = selectedIndex === i;
+          return (
+            <g key={`${c.symbol}-${c.closeDate}-${i}`}>
+              <circle
+                className={`chart-dot${isSelected ? " selected" : ""}`}
+                cx={c.x}
+                cy={c.y}
+                r={isSelected ? 5 : 3}
+              />
+              <circle
+                className="chart-dot-hit"
+                cx={c.x}
+                cy={c.y}
+                r={10}
+                role="button"
+                tabIndex={0}
+                aria-label={`${c.symbol} ${c.date} ${money(c.gainLoss)}`}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    togglePoint(i);
+                  }
+                }}
+              >
+                <title>
+                  {c.date} · {c.symbol} · {money(c.gainLoss)}
+                </title>
+              </circle>
+            </g>
+          );
+        })}
         <text className="chart-axis" x={pad.l} y={h - 6}>
           {series[0]?.date}
         </text>
@@ -181,6 +369,49 @@ function CumulativeChart({
           {series[series.length - 1]?.date}
         </text>
       </svg>
+      {selected ? (
+        <div className="chart-detail">
+          <div className="chart-detail-head">
+            <p className="chart-detail-title">
+              {selected.symbol} · closed {selected.date}
+              {selected.openDate ? ` · opened ${selected.openDate.slice(0, 10)}` : ""}
+            </p>
+            <button type="button" className="chart-detail-clear" onClick={() => setSelectedIndex(null)}>
+              Clear
+            </button>
+          </div>
+          <dl className="chart-detail-stats">
+            <div>
+              <dt>Qty</dt>
+              <dd>{selected.quantity}</dd>
+            </div>
+            <div>
+              <dt>Cost</dt>
+              <dd>{money(selected.cost)}</dd>
+            </div>
+            <div>
+              <dt>Proceeds</dt>
+              <dd>{money(selected.proceeds)}</dd>
+            </div>
+            <div>
+              <dt>Trade P&amp;L</dt>
+              <dd className={plClass(selected.gainLoss)}>{money(selected.gainLoss)}</dd>
+            </div>
+            <div>
+              <dt>P&amp;L %</dt>
+              <dd className={plClass(selected.gainLossPercent)}>
+                {selected.gainLossPercent?.toFixed?.(1) ?? selected.gainLossPercent}%
+              </dd>
+            </div>
+            <div>
+              <dt>Cumulative</dt>
+              <dd className={plClass(selected.cumulative)}>{money(selected.cumulative)}</dd>
+            </div>
+          </dl>
+        </div>
+      ) : (
+        <p className="chart-hint">Click a close to inspect P&amp;L</p>
+      )}
     </div>
   );
 }
@@ -665,6 +896,7 @@ export default function App() {
   const route = useHashRoute();
   const qc = useQueryClient();
   const [loginOpen, setLoginOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<DeskAction | null>(null);
   const [token, setToken] = useState<string | null>(() => getAuthToken());
   const [mode, setMode] = useState<TradingMode>(() => getTradingMode());
 
@@ -743,12 +975,19 @@ export default function App() {
       : Boolean(statusQ.data?.execution?.paper);
   const canPlace = canAct && executionEnabled;
 
-  const guard = (fn: () => void) => {
+  const requestAction = (action: DeskAction) => {
     if (authRequired) {
       setLoginOpen(true);
       return;
     }
-    fn();
+    setPendingAction(action);
+  };
+
+  const runPendingAction = () => {
+    if (pendingAction === "rebalance") rebalanceMut.mutate();
+    else if (pendingAction === "place") placeMut.mutate();
+    else if (pendingAction === "both") bothMut.mutate();
+    setPendingAction(null);
   };
 
   const nav: Array<{ id: Route; href: string; label: string }> = [
@@ -851,7 +1090,7 @@ export default function App() {
         <button
           type="button"
           disabled={!canAct || rebalanceMut.isPending}
-          onClick={() => guard(() => rebalanceMut.mutate())}
+          onClick={() => requestAction("rebalance")}
         >
           Rebalance
         </button>
@@ -863,7 +1102,7 @@ export default function App() {
               ? undefined
               : `Enable ${mode} exec to place orders`
           }
-          onClick={() => guard(() => placeMut.mutate())}
+          onClick={() => requestAction("place")}
         >
           Place orders
         </button>
@@ -875,7 +1114,7 @@ export default function App() {
               ? undefined
               : `Enable ${mode} exec to place orders`
           }
-          onClick={() => guard(() => bothMut.mutate())}
+          onClick={() => requestAction("both")}
         >
           Rebalance + place
         </button>
@@ -953,6 +1192,12 @@ export default function App() {
           setToken(getAuthToken());
           void qc.invalidateQueries({ queryKey: ["auth"] });
         }}
+      />
+      <ConfirmModal
+        action={pendingAction}
+        mode={mode}
+        onConfirm={runPendingAction}
+        onClose={() => setPendingAction(null)}
       />
     </>
   );
