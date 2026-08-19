@@ -41,7 +41,13 @@ const UI_DIST = path.join(__dirname, '..', 'ui', 'dist');
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD?.trim() || '';
 const DESK_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const CLOSED_TRADE_LIMIT = 200;
+const OCC_OPTION = /^[A-Z]{1,6}\s*\d{6}[CP]\d{8}$/i;
+const OPTION_CONTRACT_SIZE = 100;
 const deskResponseCache = new TtlCache();
+
+function isOptionSymbol(symbol: string): boolean {
+  return OCC_OPTION.test(symbol.trim());
+}
 const activeSessions = new Set<string>();
 
 type JobKind = 'rebalance' | 'place-orders' | 'rebalance-and-place';
@@ -440,8 +446,13 @@ async function buildPositions(mode: TradingMode) {
 
   const enrichedBrokerPositions = brokerPositions.map((position) => {
     const lastPrice = resolveQuotePrice(quotes.get(position.symbol));
+    const contractSize = isOptionSymbol(position.symbol)
+      ? OPTION_CONTRACT_SIZE
+      : 1;
     const marketValue =
-      lastPrice !== null ? lastPrice * position.quantity : null;
+      lastPrice !== null
+        ? lastPrice * position.quantity * contractSize
+        : null;
     const openPl =
       marketValue !== null ? marketValue - position.costBasis : null;
     const openPlPercent =
