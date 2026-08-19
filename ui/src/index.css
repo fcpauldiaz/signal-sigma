@@ -366,21 +366,6 @@ input, select {
   border-radius: var(--radius-md);
 }
 
-.csv-block {
-  margin: 0;
-  max-height: 28rem;
-  overflow: auto;
-  padding: var(--space-12);
-  border: var(--rule);
-  border-radius: var(--radius-md);
-  background: var(--color-paper);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  line-height: 1.45;
-  white-space: pre;
-  tab-size: 4;
-}
-
 table.data {
   width: 100%;
   border-collapse: collapse;

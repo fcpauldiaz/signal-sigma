@@ -129,18 +129,16 @@ function ClosedTradesCsv({
   mode: TradingMode;
   accountId: string;
 }) {
-  const csv = useMemo(() => closedTradesToCsv(trades), [trades]);
-
   return (
     <section className="panel">
       <div className="panel-head">
-        <h2 className="panel-title">Last {trades.length} closes · CSV</h2>
+        <h2 className="panel-title">Last {trades.length} closes</h2>
         <button
           type="button"
           onClick={() =>
             downloadTextFile(
               `closes-${mode}-${accountId}.csv`,
-              csv,
+              closedTradesToCsv(trades),
               "text/csv;charset=utf-8"
             )
           }
@@ -148,7 +146,6 @@ function ClosedTradesCsv({
           Download CSV
         </button>
       </div>
-      <pre className="csv-block">{csv}</pre>
     </section>
   );
 }
