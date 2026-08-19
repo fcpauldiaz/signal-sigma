@@ -110,6 +110,7 @@ export interface PositionsResponse {
     lastPrice: number;
     ownershipPrice: number;
     strategy: string | null;
+    systemClassification?: string | null;
     value: number;
     percent: number;
   }>;

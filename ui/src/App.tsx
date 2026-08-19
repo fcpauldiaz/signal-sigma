@@ -62,6 +62,17 @@ function plClass(n: number | null | undefined): "" | "pos" | "neg" {
   return n > 0 ? "pos" : "neg";
 }
 
+function isCashBookRow(row: {
+  symbol: string;
+  strategy: string | null;
+  systemClassification?: string | null;
+}): boolean {
+  if (row.systemClassification?.trim().toLowerCase() === "cash") return true;
+  if ((row.strategy || "").trim().toLowerCase() === "cash") return true;
+  const symbol = row.symbol.trim().toUpperCase();
+  return symbol === "USD" || symbol.startsWith("TOTAL ");
+}
+
 type ClosedTrade = PerformanceResponse["recentClosed"][number];
 
 const CLOSED_CSV_HEADERS = [
@@ -700,7 +711,25 @@ function OverviewPage({
   );
 }
 
+function signalPositionCells(t: PositionsResponse["signalPositions"][number]) {
+  return (
+    <>
+      <td>{t.symbol}</td>
+      <td>{t.strategy || (isCashBookRow(t) ? "Cash" : "—")}</td>
+      <td>{t.amount}</td>
+      <td>{t.targetAmount}</td>
+      <td>{money(t.ownershipPrice)}</td>
+      <td>{money(t.lastPrice)}</td>
+      <td>{money(t.value)}</td>
+      <td>{t.percent?.toFixed?.(1) ?? t.percent}%</td>
+    </>
+  );
+}
+
 function PositionsPage({ data }: { data: PositionsResponse }) {
+  const holdings = data.signalPositions.filter((t) => !isCashBookRow(t));
+  const cashRows = data.signalPositions.filter((t) => isCashBookRow(t));
+
   return (
     <>
       <header className="workbench-header">
@@ -797,19 +826,17 @@ function PositionsPage({ data }: { data: PositionsResponse }) {
               </tr>
             </thead>
             <tbody>
-              {data.signalPositions.map((t) => (
-                <tr key={t.symbol}>
-                  <td>{t.symbol}</td>
-                  <td>{t.strategy || "—"}</td>
-                  <td>{t.amount}</td>
-                  <td>{t.targetAmount}</td>
-                  <td>{money(t.ownershipPrice)}</td>
-                  <td>{money(t.lastPrice)}</td>
-                  <td>{money(t.value)}</td>
-                  <td>{t.percent?.toFixed?.(1) ?? t.percent}%</td>
-                </tr>
+              {holdings.map((t) => (
+                <tr key={t.symbol}>{signalPositionCells(t)}</tr>
               ))}
             </tbody>
+            {cashRows.length > 0 && (
+              <tfoot>
+                {cashRows.map((t) => (
+                  <tr key={t.symbol}>{signalPositionCells(t)}</tr>
+                ))}
+              </tfoot>
+            )}
           </table>
         </div>
       </section>
