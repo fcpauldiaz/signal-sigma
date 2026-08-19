@@ -62,6 +62,86 @@ function plClass(n: number | null | undefined): "" | "pos" | "neg" {
   return n > 0 ? "pos" : "neg";
 }
 
+type ClosedTrade = PerformanceResponse["recentClosed"][number];
+
+const CLOSED_CSV_HEADERS = [
+  "close_date",
+  "symbol",
+  "quantity",
+  "cost",
+  "proceeds",
+  "gain_loss",
+  "gain_loss_percent",
+  "open_date",
+] as const;
+
+function csvCell(value: string | number): string {
+  const raw = String(value);
+  if (/[",\n\r]/.test(raw)) return `"${raw.replace(/"/g, '""')}"`;
+  return raw;
+}
+
+function closedTradesToCsv(trades: ClosedTrade[]): string {
+  const rows = trades.map((t) =>
+    [
+      t.closeDate.slice(0, 10),
+      t.symbol,
+      t.quantity,
+      t.cost,
+      t.proceeds,
+      t.gainLoss,
+      t.gainLossPercent,
+      t.openDate.slice(0, 10),
+    ]
+      .map(csvCell)
+      .join(",")
+  );
+  return [CLOSED_CSV_HEADERS.join(","), ...rows].join("\n");
+}
+
+function downloadTextFile(filename: string, contents: string, mime: string) {
+  const blob = new Blob([contents], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function ClosedTradesCsv({
+  trades,
+  mode,
+  accountId,
+}: {
+  trades: ClosedTrade[];
+  mode: TradingMode;
+  accountId: string;
+}) {
+  const csv = useMemo(() => closedTradesToCsv(trades), [trades]);
+
+  return (
+    <section className="panel">
+      <div className="panel-head">
+        <h2 className="panel-title">Last {trades.length} closes · CSV</h2>
+        <button
+          type="button"
+          onClick={() =>
+            downloadTextFile(
+              `closes-${mode}-${accountId}.csv`,
+              csv,
+              "text/csv;charset=utf-8"
+            )
+          }
+        >
+          Download CSV
+        </button>
+      </div>
+      <pre className="csv-block">{csv}</pre>
+    </section>
+  );
+}
+
 type DeskAction = "rebalance" | "place" | "both";
 
 function deskActionCopy(action: DeskAction, mode: TradingMode) {
@@ -579,6 +659,14 @@ function OverviewPage({
         </section>
       )}
 
+      {performance && performance.recentClosed.length > 0 && (
+        <ClosedTradesCsv
+          trades={performance.recentClosed}
+          mode={performance.mode}
+          accountId={performance.accountId}
+        />
+      )}
+
       {status.job && (
         <section className="panel">
           <div className="panel-head">
@@ -835,6 +923,12 @@ function PerformancePage({ data }: { data: PerformanceResponse }) {
         />
       </div>
 
+      <ClosedTradesCsv
+        trades={data.recentClosed}
+        mode={data.mode}
+        accountId={data.accountId}
+      />
+
       <section className="panel">
         <div className="panel-head">
           <h2 className="panel-title">Cumulative</h2>
@@ -847,46 +941,6 @@ function PerformancePage({ data }: { data: PerformanceResponse }) {
           <h2 className="panel-title">Monthly P&amp;L</h2>
         </div>
         <MonthlyBars monthly={data.monthly} />
-      </section>
-
-      <section className="panel">
-        <div className="panel-head">
-          <h2 className="panel-title">Recent closes</h2>
-        </div>
-        <div className="table-wrap">
-          <table className="data">
-            <thead>
-              <tr>
-                <th>Close</th>
-                <th>Symbol</th>
-                <th>Qty</th>
-                <th>Proceeds</th>
-                <th>P&amp;L</th>
-                <th>%</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.recentClosed.map((t, i) => (
-                <tr key={`${t.symbol}-${t.closeDate}-${i}`}>
-                  <td>{t.closeDate.slice(0, 10)}</td>
-                  <td>{t.symbol}</td>
-                  <td>{t.quantity}</td>
-                  <td>{money(t.proceeds)}</td>
-                  <td>
-                      <span className={`pl ${plClass(t.gainLoss)}`.trim()}>
-                        {money(t.gainLoss)}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`pl ${plClass(t.gainLossPercent)}`.trim()}>
-                        {t.gainLossPercent?.toFixed?.(1) ?? t.gainLossPercent}%
-                      </span>
-                    </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </section>
     </>
   );

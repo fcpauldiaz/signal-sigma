@@ -39,6 +39,7 @@ const UI_PORT = parseInt(process.env.UI_PORT || '3000', 10);
 const UI_DIST = path.join(__dirname, '..', 'ui', 'dist');
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD?.trim() || '';
 const DESK_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const CLOSED_TRADE_LIMIT = 200;
 const deskResponseCache = new TtlCache();
 const activeSessions = new Set<string>();
 
@@ -490,7 +491,7 @@ async function buildPositions(mode: TradingMode) {
 async function buildPerformance(mode: TradingMode) {
   const { tradierApi, tradier } = createServices(mode);
   const [closed, balances] = await Promise.all([
-    tradierApi.getGainLoss(100),
+    tradierApi.getClosedPositions(CLOSED_TRADE_LIMIT),
     tradierApi.getBalances(),
   ]);
 
@@ -551,7 +552,7 @@ async function buildPerformance(mode: TradingMode) {
     },
     monthly,
     cumulativeSeries,
-    recentClosed: sorted.slice().reverse().slice(0, 25),
+    recentClosed: sorted.slice().reverse().slice(0, CLOSED_TRADE_LIMIT),
   };
 }
 
