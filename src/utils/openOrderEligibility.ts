@@ -67,7 +67,7 @@ export function isCashBookRow(input: {
     return true;
   }
   const symbol = input.symbol.trim().toUpperCase();
-  return symbol === 'USD' || symbol.startsWith('TOTAL ');
+  return symbol.startsWith('TOTAL ');
 }
 
 export function cashRowsLast<T extends Parameters<typeof isCashBookRow>[0]>(

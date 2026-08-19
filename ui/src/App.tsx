@@ -70,7 +70,7 @@ function isCashBookRow(row: {
   if (row.systemClassification?.trim().toLowerCase() === "cash") return true;
   if ((row.strategy || "").trim().toLowerCase() === "cash") return true;
   const symbol = row.symbol.trim().toUpperCase();
-  return symbol === "USD" || symbol.startsWith("TOTAL ");
+  return symbol.startsWith("TOTAL ");
 }
 
 type ClosedTrade = PerformanceResponse["recentClosed"][number];
