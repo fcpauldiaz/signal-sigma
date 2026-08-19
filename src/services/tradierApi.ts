@@ -192,7 +192,7 @@ export class TradierApi {
     }
   }
 
-  async getGainLoss(limit = 100): Promise<TradierClosedPosition[]> {
+  async getGainLoss(limit = 100, page = 1): Promise<TradierClosedPosition[]> {
     try {
       const response = await this.client.get<{
         gainloss?:
@@ -203,7 +203,7 @@ export class TradierApi {
                 | Array<Record<string, unknown>>;
             };
       }>(`/accounts/${this.accountId}/gainloss`, {
-        params: { page: 1, limit },
+        params: { page, limit },
       });
 
       const raw = response.data.gainloss;
@@ -236,6 +236,18 @@ export class TradierApi {
       }
       throw error;
     }
+  }
+
+  async getClosedPositions(limit: number): Promise<TradierClosedPosition[]> {
+    const pageSize = 100;
+    const collected: TradierClosedPosition[] = [];
+    const pages = Math.max(1, Math.ceil(limit / pageSize));
+    for (let page = 1; page <= pages; page++) {
+      const batch = await this.getGainLoss(pageSize, page);
+      collected.push(...batch);
+      if (batch.length < pageSize) break;
+    }
+    return collected.slice(0, limit);
   }
 }
 
