@@ -129,7 +129,18 @@ export interface PerformanceResponse {
     winRate: number;
   };
   monthly: Array<{ month: string; gainLoss: number }>;
-  cumulativeSeries: Array<{ date: string; cumulative: number; gainLoss: number }>;
+  cumulativeSeries: Array<{
+    date: string;
+    cumulative: number;
+    gainLoss: number;
+    symbol: string;
+    quantity: number;
+    cost: number;
+    proceeds: number;
+    gainLossPercent: number;
+    openDate: string;
+    closeDate: string;
+  }>;
   recentClosed: Array<{
     symbol: string;
     quantity: number;

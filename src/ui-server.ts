@@ -500,8 +500,18 @@ async function buildPerformance(mode: TradingMode) {
 
   const monthlyMap = new Map<string, number>();
   let cumulative = 0;
-  const cumulativeSeries: Array<{ date: string; cumulative: number; gainLoss: number }> =
-    [];
+  const cumulativeSeries: Array<{
+    date: string;
+    cumulative: number;
+    gainLoss: number;
+    symbol: string;
+    quantity: number;
+    cost: number;
+    proceeds: number;
+    gainLossPercent: number;
+    openDate: string;
+    closeDate: string;
+  }> = [];
 
   for (const trade of sorted) {
     const month = trade.closeDate.slice(0, 7);
@@ -511,6 +521,13 @@ async function buildPerformance(mode: TradingMode) {
       date: trade.closeDate.slice(0, 10),
       cumulative,
       gainLoss: trade.gainLoss,
+      symbol: trade.symbol,
+      quantity: trade.quantity,
+      cost: trade.cost,
+      proceeds: trade.proceeds,
+      gainLossPercent: trade.gainLossPercent,
+      openDate: trade.openDate,
+      closeDate: trade.closeDate,
     });
   }
 
