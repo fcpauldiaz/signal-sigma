@@ -24,6 +24,24 @@ import {
 } from "./api";
 
 type Route = "overview" | "positions" | "orders" | "performance";
+type AssetFilter = "all" | "stocks" | "options";
+
+const OCC_OPTION = /^[A-Z]{1,6}\s*\d{6}[CP]\d{8}$/i;
+const ASSET_FILTER_KEY = "signal_sigma_asset_filter";
+
+function isOptionSymbol(symbol: string): boolean {
+  return OCC_OPTION.test(symbol.trim());
+}
+
+function matchesAssetFilter(symbol: string, filter: AssetFilter): boolean {
+  if (filter === "all") return true;
+  return isOptionSymbol(symbol) === (filter === "options");
+}
+
+function parseAssetFilter(value: string | null): AssetFilter {
+  if (value === "stocks" || value === "options") return value;
+  return "all";
+}
 
 function useHashRoute(): Route {
   const [route, setRoute] = useState<Route>(() => parseRoute(location.hash));
@@ -124,11 +142,14 @@ function ClosedTradesCsv({
   trades,
   mode,
   accountId,
+  assetFilter,
 }: {
   trades: ClosedTrade[];
   mode: TradingMode;
   accountId: string;
+  assetFilter: AssetFilter;
 }) {
+  const suffix = assetFilter === "all" ? "" : `-${assetFilter}`;
   return (
     <section className="panel">
       <div className="panel-head">
@@ -137,7 +158,7 @@ function ClosedTradesCsv({
           type="button"
           onClick={() =>
             downloadTextFile(
-              `closes-${mode}-${accountId}.csv`,
+              `closes-${mode}-${accountId}${suffix}.csv`,
               closedTradesToCsv(trades),
               "text/csv;charset=utf-8"
             )
@@ -148,6 +169,62 @@ function ClosedTradesCsv({
       </div>
     </section>
   );
+}
+
+function performanceForFilter(
+  data: PerformanceResponse,
+  filter: AssetFilter
+): PerformanceResponse {
+  if (filter === "all") return data;
+
+  const trades = data.recentClosed.filter((t) =>
+    matchesAssetFilter(t.symbol, filter)
+  );
+  const sorted = trades
+    .slice()
+    .sort((a, b) => a.closeDate.localeCompare(b.closeDate));
+
+  const monthlyMap = new Map<string, number>();
+  let cumulative = 0;
+  const cumulativeSeries: PerformanceResponse["cumulativeSeries"] = sorted.map(
+    (trade) => {
+      const month = trade.closeDate.slice(0, 7);
+      monthlyMap.set(month, (monthlyMap.get(month) || 0) + trade.gainLoss);
+      cumulative += trade.gainLoss;
+      return {
+        date: trade.closeDate.slice(0, 10),
+        cumulative,
+        gainLoss: trade.gainLoss,
+        symbol: trade.symbol,
+        quantity: trade.quantity,
+        cost: trade.cost,
+        proceeds: trade.proceeds,
+        gainLossPercent: trade.gainLossPercent,
+        openDate: trade.openDate,
+        closeDate: trade.closeDate,
+      };
+    }
+  );
+
+  const monthly = [...monthlyMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([month, gainLoss]) => ({ month, gainLoss }));
+  const winners = sorted.filter((t) => t.gainLoss > 0).length;
+  const losers = sorted.filter((t) => t.gainLoss < 0).length;
+
+  return {
+    ...data,
+    totals: {
+      realizedPl: cumulative,
+      tradeCount: sorted.length,
+      winners,
+      losers,
+      winRate: sorted.length ? winners / sorted.length : 0,
+    },
+    monthly,
+    cumulativeSeries,
+    recentClosed: sorted.slice().reverse(),
+  };
 }
 
 type DeskAction = "rebalance" | "place" | "both";
@@ -606,14 +683,22 @@ function OverviewPage({
   positions,
   performance,
   ordersPending,
+  assetFilter,
 }: {
   status: StatusResponse;
   positions?: PositionsResponse;
   performance?: PerformanceResponse;
   ordersPending: number;
+  assetFilter: AssetFilter;
 }) {
   const equity = positions?.balances.totalEquity ?? status.tradier.totalEquity;
-  const openPl = positions?.balances.openPl;
+  const filteredPositions = positions?.brokerPositions.filter((p) =>
+    matchesAssetFilter(p.symbol, assetFilter)
+  );
+  const openPl =
+    assetFilter === "all" || !filteredPositions
+      ? positions?.balances.openPl
+      : filteredPositions.reduce((sum, p) => sum + (p.openPl ?? 0), 0);
   const realized = performance?.totals.realizedPl;
 
   return (
@@ -672,6 +757,7 @@ function OverviewPage({
           trades={performance.recentClosed}
           mode={performance.mode}
           accountId={performance.accountId}
+          assetFilter={assetFilter}
         />
       )}
 
@@ -723,9 +809,35 @@ function signalPositionCells(t: PositionsResponse["signalPositions"][number]) {
   );
 }
 
-function PositionsPage({ data }: { data: PositionsResponse }) {
-  const holdings = data.signalPositions.filter((t) => !isCashBookRow(t));
-  const cashRows = data.signalPositions.filter((t) => isCashBookRow(t));
+function PositionsPage({
+  data,
+  assetFilter,
+}: {
+  data: PositionsResponse;
+  assetFilter: AssetFilter;
+}) {
+  const brokerPositions = data.brokerPositions.filter((p) =>
+    matchesAssetFilter(p.symbol, assetFilter)
+  );
+  const holdings = data.signalPositions
+    .filter((t) => !isCashBookRow(t))
+    .filter((t) => matchesAssetFilter(t.symbol, assetFilter));
+  const cashRows =
+    assetFilter === "all"
+      ? data.signalPositions.filter((t) => isCashBookRow(t))
+      : [];
+  const marketValue =
+    assetFilter === "all"
+      ? data.balances.marketValue
+      : brokerPositions.reduce((sum, p) => sum + (p.marketValue ?? 0), 0);
+  const openPl =
+    assetFilter === "all"
+      ? data.balances.openPl
+      : brokerPositions.reduce((sum, p) => sum + (p.openPl ?? 0), 0);
+  const signalValue =
+    assetFilter === "all"
+      ? data.signalPortfolioValue
+      : holdings.reduce((sum, t) => sum + (t.value || 0), 0);
 
   return (
     <>
@@ -741,21 +853,25 @@ function PositionsPage({ data }: { data: PositionsResponse }) {
       <div className="metric-grid">
         <Metric label="Equity" value={money(data.balances.totalEquity)} />
         <Metric label="Cash" value={money(data.balances.totalCash)} />
-        <Metric label="Market value" value={money(data.balances.marketValue)} />
+        <Metric label="Market value" value={money(marketValue)} />
         <Metric
           label="Open P&L"
-          value={money(data.balances.openPl)}
-          tone={plClass(data.balances.openPl)}
+          value={money(openPl)}
+          tone={plClass(openPl)}
         />
       </div>
 
       <section className="panel">
         <div className="panel-head">
           <h2 className="panel-title">Broker positions</h2>
-          <span>{data.brokerPositions.length} symbols</span>
+          <span>{brokerPositions.length} symbols</span>
         </div>
-        {data.brokerPositions.length === 0 ? (
-          <p>No open broker positions (cash).</p>
+        {brokerPositions.length === 0 ? (
+          <p>
+            {assetFilter === "all"
+              ? "No open broker positions (cash)."
+              : `No open ${assetFilter} positions.`}
+          </p>
         ) : (
           <div className="table-wrap">
             <table className="data">
@@ -772,7 +888,7 @@ function PositionsPage({ data }: { data: PositionsResponse }) {
                 </tr>
               </thead>
               <tbody>
-                {data.brokerPositions.map((p) => (
+                {brokerPositions.map((p) => (
                   <tr key={p.symbol}>
                     <td>{p.symbol}</td>
                     <td>{p.quantity}</td>
@@ -804,7 +920,7 @@ function PositionsPage({ data }: { data: PositionsResponse }) {
         <div className="panel-head">
           <h2 className="panel-title">Signal Sigma book</h2>
           <span>
-            {data.signalPositions.length} · {money(data.signalPortfolioValue)} ·{" "}
+            {holdings.length} · {money(signalValue)} ·{" "}
             {data.pendingOrderCount} pending
           </span>
         </div>
@@ -823,9 +939,19 @@ function PositionsPage({ data }: { data: PositionsResponse }) {
               </tr>
             </thead>
             <tbody>
-              {holdings.map((t) => (
-                <tr key={t.symbol}>{signalPositionCells(t)}</tr>
-              ))}
+              {holdings.length === 0 ? (
+                <tr>
+                  <td colSpan={8}>
+                    {assetFilter === "all"
+                      ? "No Signal Sigma positions."
+                      : `No ${assetFilter} in the Signal Sigma book.`}
+                  </td>
+                </tr>
+              ) : (
+                holdings.map((t) => (
+                  <tr key={t.symbol}>{signalPositionCells(t)}</tr>
+                ))
+              )}
             </tbody>
             {cashRows.length > 0 && (
               <tfoot>
@@ -845,11 +971,14 @@ function OrdersPage({
   orders,
   quotesOk,
   quotesMessage,
+  assetFilter,
 }: {
   orders: OpenOrderRow[];
   quotesOk: boolean;
   quotesMessage: string;
+  assetFilter: AssetFilter;
 }) {
+  const visible = orders.filter((o) => matchesAssetFilter(o.symbol, assetFilter));
   return (
     <>
       <header className="workbench-header">
@@ -865,7 +994,7 @@ function OrdersPage({
         <StatusDot ok={quotesOk} label={quotesOk ? "Quotes ok" : "Quotes down"} />
         {!quotesOk && <span className="error-msg">{quotesMessage}</span>}
         <span>
-          {orders.filter((o) => o.eligible).length} eligible / {orders.length}{" "}
+          {visible.filter((o) => o.eligible).length} eligible / {visible.length}{" "}
           pending
         </span>
       </div>
@@ -886,12 +1015,16 @@ function OrdersPage({
               </tr>
             </thead>
             <tbody>
-              {orders.length === 0 ? (
+              {visible.length === 0 ? (
                 <tr>
-                  <td colSpan={9}>No pending orders.</td>
+                  <td colSpan={9}>
+                    {assetFilter === "all"
+                      ? "No pending orders."
+                      : `No pending ${assetFilter} orders.`}
+                  </td>
                 </tr>
               ) : (
-                orders.map((o) => (
+                visible.map((o) => (
                   <tr key={o.id}>
                     <td className={o.direction === "BUY" ? "pos" : "neg"}>
                       {o.direction}
@@ -922,7 +1055,13 @@ function OrdersPage({
   );
 }
 
-function PerformancePage({ data }: { data: PerformanceResponse }) {
+function PerformancePage({
+  data,
+  assetFilter,
+}: {
+  data: PerformanceResponse;
+  assetFilter: AssetFilter;
+}) {
   return (
     <>
       <header className="workbench-header">
@@ -951,6 +1090,7 @@ function PerformancePage({ data }: { data: PerformanceResponse }) {
         trades={data.recentClosed}
         mode={data.mode}
         accountId={data.accountId}
+        assetFilter={assetFilter}
       />
 
       <section className="panel">
@@ -977,6 +1117,14 @@ export default function App() {
   const [pendingAction, setPendingAction] = useState<DeskAction | null>(null);
   const [token, setToken] = useState<string | null>(() => getAuthToken());
   const [mode, setMode] = useState<TradingMode>(() => getTradingMode());
+  const [assetFilter, setAssetFilter] = useState<AssetFilter>(() =>
+    parseAssetFilter(localStorage.getItem(ASSET_FILTER_KEY))
+  );
+
+  const switchAssetFilter = (next: AssetFilter) => {
+    setAssetFilter(next);
+    localStorage.setItem(ASSET_FILTER_KEY, next);
+  };
 
   const switchMode = (next: TradingMode) => {
     setTradingMode(next);
@@ -1017,6 +1165,14 @@ export default function App() {
     refetchInterval: 60_000,
     enabled: route === "performance" || route === "overview",
   });
+
+  const filteredPerformance = useMemo(
+    () => (perfQ.data ? performanceForFilter(perfQ.data, assetFilter) : undefined),
+    [perfQ.data, assetFilter]
+  );
+  const filteredOrdersPending =
+    ordersQ.data?.orders.filter((o) => matchesAssetFilter(o.symbol, assetFilter))
+      .length ?? 0;
 
   const invalidateAll = () => {
     void qc.invalidateQueries({ queryKey: ["status"] });
@@ -1103,6 +1259,18 @@ export default function App() {
           >
             Live
           </button>
+        </span>
+        <span className="mode-switch" role="group" aria-label="Asset filter">
+          {(["all", "stocks", "options"] as const).map((id) => (
+            <button
+              key={id}
+              type="button"
+              className={assetFilter === id ? "active" : undefined}
+              onClick={() => switchAssetFilter(id)}
+            >
+              {id === "all" ? "All" : id === "stocks" ? "Stocks" : "Options"}
+            </button>
+          ))}
         </span>
         <span className="nav-auth">
           {authQ.data?.authEnabled ? (
@@ -1222,8 +1390,9 @@ export default function App() {
         <OverviewPage
           status={statusQ.data}
           positions={positionsQ.data}
-          performance={perfQ.data}
-          ordersPending={ordersQ.data?.pendingCount ?? 0}
+          performance={filteredPerformance}
+          ordersPending={filteredOrdersPending}
+          assetFilter={assetFilter}
         />
       )}
 
@@ -1233,7 +1402,9 @@ export default function App() {
           {positionsQ.isError && (
             <p className="error-msg">{(positionsQ.error as Error).message}</p>
           )}
-          {positionsQ.data && <PositionsPage data={positionsQ.data} />}
+          {positionsQ.data && (
+            <PositionsPage data={positionsQ.data} assetFilter={assetFilter} />
+          )}
         </>
       )}
 
@@ -1248,6 +1419,7 @@ export default function App() {
               orders={ordersQ.data.orders}
               quotesOk={ordersQ.data.quotesOk}
               quotesMessage={ordersQ.data.quotesMessage}
+              assetFilter={assetFilter}
             />
           )}
         </>
@@ -1259,7 +1431,9 @@ export default function App() {
           {perfQ.isError && (
             <p className="error-msg">{(perfQ.error as Error).message}</p>
           )}
-          {perfQ.data && <PerformancePage data={perfQ.data} />}
+          {filteredPerformance && (
+            <PerformancePage data={filteredPerformance} assetFilter={assetFilter} />
+          )}
         </>
       )}
 
