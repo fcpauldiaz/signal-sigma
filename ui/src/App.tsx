@@ -5,6 +5,9 @@ import {
   fetchOrders,
   fetchPerformance,
   fetchPositions,
+  fetchSchwabAuthUrl,
+  fetchSchwabPerformance,
+  fetchSchwabPositions,
   fetchStatus,
   getAuthToken,
   getTradingMode,
@@ -19,11 +22,13 @@ import {
   type OpenOrderRow,
   type PerformanceResponse,
   type PositionsResponse,
+  type SchwabPerformanceResponse,
+  type SchwabPositionsResponse,
   type StatusResponse,
   type TradingMode,
 } from "./api";
 
-type Route = "overview" | "positions" | "orders" | "performance";
+type Route = "overview" | "positions" | "orders" | "performance" | "schwab";
 type AssetFilter = "all" | "stocks" | "options";
 
 const OCC_OPTION = /^[A-Z]{1,6}\s*\d{6}[CP]\d{8}$/i;
@@ -43,6 +48,18 @@ function parseAssetFilter(value: string | null): AssetFilter {
   return "all";
 }
 
+function filteredOpenPl(
+  filter: AssetFilter,
+  accountOpenPl: number | null | undefined,
+  brokerPositions: PositionsResponse["brokerPositions"] | undefined
+): number | null | undefined {
+  if (filter === "all") return accountOpenPl;
+  if (!brokerPositions) return undefined;
+  return brokerPositions
+    .filter((p) => matchesAssetFilter(p.symbol, filter))
+    .reduce((sum, p) => sum + (p.openPl ?? 0), 0);
+}
+
 function useHashRoute(): Route {
   const [route, setRoute] = useState<Route>(() => parseRoute(location.hash));
   useEffect(() => {
@@ -58,6 +75,7 @@ function parseRoute(hash: string): Route {
   if (path.startsWith("positions")) return "positions";
   if (path.startsWith("orders")) return "orders";
   if (path.startsWith("performance")) return "performance";
+  if (path.startsWith("schwab")) return "schwab";
   return "overview";
 }
 
@@ -145,7 +163,7 @@ function ClosedTradesCsv({
   assetFilter,
 }: {
   trades: ClosedTrade[];
-  mode: TradingMode;
+  mode: string;
   accountId: string;
   assetFilter: AssetFilter;
 }) {
@@ -158,7 +176,7 @@ function ClosedTradesCsv({
           type="button"
           onClick={() =>
             downloadTextFile(
-              `closes-${mode}-${accountId}${suffix}.csv`,
+              `closes-${mode}-${accountId || "account"}${suffix}.csv`,
               closedTradesToCsv(trades),
               "text/csv;charset=utf-8"
             )
@@ -171,10 +189,9 @@ function ClosedTradesCsv({
   );
 }
 
-function performanceForFilter(
-  data: PerformanceResponse,
-  filter: AssetFilter
-): PerformanceResponse {
+function performanceForFilter<
+  T extends PerformanceResponse | SchwabPerformanceResponse,
+>(data: T, filter: AssetFilter): T {
   if (filter === "all") return data;
 
   const trades = data.recentClosed.filter((t) =>
@@ -682,24 +699,45 @@ function OverviewPage({
   status,
   positions,
   performance,
+  schwabPositions,
+  schwabPerformance,
   ordersPending,
   assetFilter,
 }: {
   status: StatusResponse;
   positions?: PositionsResponse;
   performance?: PerformanceResponse;
+  schwabPositions?: SchwabPositionsResponse;
+  schwabPerformance?: SchwabPerformanceResponse;
   ordersPending: number;
   assetFilter: AssetFilter;
 }) {
   const equity = positions?.balances.totalEquity ?? status.tradier.totalEquity;
-  const filteredPositions = positions?.brokerPositions.filter((p) =>
-    matchesAssetFilter(p.symbol, assetFilter)
+  const openPl = filteredOpenPl(
+    assetFilter,
+    positions?.balances.openPl,
+    positions?.brokerPositions
   );
-  const openPl =
-    assetFilter === "all" || !filteredPositions
-      ? positions?.balances.openPl
-      : filteredPositions.reduce((sum, p) => sum + (p.openPl ?? 0), 0);
   const realized = performance?.totals.realizedPl;
+  const schwabOpenPl = filteredOpenPl(
+    assetFilter,
+    schwabPositions?.balances.openPl,
+    schwabPositions?.brokerPositions
+  );
+  const schwabEquity = schwabPositions?.balances.totalEquity;
+  const schwabRealized = schwabPerformance?.totals.realizedPl;
+  const combinedEquity =
+    equity != null || schwabEquity != null
+      ? (equity ?? 0) + (schwabEquity ?? 0)
+      : null;
+  const combinedOpen =
+    openPl != null || schwabOpenPl != null
+      ? (openPl ?? 0) + (schwabOpenPl ?? 0)
+      : null;
+  const combinedRealized =
+    realized != null || schwabRealized != null
+      ? (realized ?? 0) + (schwabRealized ?? 0)
+      : null;
 
   return (
     <>
@@ -722,6 +760,16 @@ function OverviewPage({
       <div className="stats-inline">
         <StatusDot ok={status.signalSigma.ok} label="Signal Sigma" />
         <StatusDot ok={status.tradier.ok} label="Tradier" />
+        <StatusDot
+          ok={Boolean(status.schwab?.ok)}
+          label={
+            status.schwab?.needsReauth
+              ? "Schwab · re-auth"
+              : status.schwab?.configured
+                ? "Schwab"
+                : "Schwab · off"
+          }
+        />
         <span>
           Coolify cron · rebalance {status.schedules.rebalance} · orders{" "}
           {status.schedules.orders}
@@ -738,6 +786,32 @@ function OverviewPage({
         />
         <Metric label="Open orders" value={String(ordersPending)} />
       </div>
+
+      {schwabPositions?.connected ? (
+        <section className="panel">
+          <div className="panel-head">
+            <h2 className="panel-title">Combined · Tradier + Schwab</h2>
+            <span className="status connected">two strategies</span>
+          </div>
+          <div className="metric-grid">
+            <Metric label="Combined equity" value={money(combinedEquity)} />
+            <Metric
+              label="Combined open P&L"
+              value={money(combinedOpen)}
+              tone={plClass(combinedOpen)}
+            />
+            <Metric
+              label="Combined realized"
+              value={money(combinedRealized)}
+              tone={plClass(combinedRealized)}
+            />
+            <Metric
+              label="Schwab equity"
+              value={money(schwabEquity)}
+            />
+          </div>
+        </section>
+      ) : null}
 
       {performance && performance.cumulativeSeries.length > 0 && (
         <section className="panel">
@@ -830,10 +904,11 @@ function PositionsPage({
     assetFilter === "all"
       ? data.balances.marketValue
       : brokerPositions.reduce((sum, p) => sum + (p.marketValue ?? 0), 0);
-  const openPl =
-    assetFilter === "all"
-      ? data.balances.openPl
-      : brokerPositions.reduce((sum, p) => sum + (p.openPl ?? 0), 0);
+  const openPl = filteredOpenPl(
+    assetFilter,
+    data.balances.openPl,
+    data.brokerPositions
+  );
   const signalValue =
     assetFilter === "all"
       ? data.signalPortfolioValue
@@ -1058,9 +1133,11 @@ function OrdersPage({
 function PerformancePage({
   data,
   assetFilter,
+  openPl,
 }: {
   data: PerformanceResponse;
   assetFilter: AssetFilter;
+  openPl: number | null | undefined;
 }) {
   return (
     <>
@@ -1068,11 +1145,16 @@ function PerformancePage({
         <p className="workbench-kicker">Closed trades · Tradier</p>
         <h1>Performance</h1>
         <p>
-          Realized gain/loss from broker closes ({data.mode} · {data.accountId})
+          Open marks and realized closes ({data.mode} · {data.accountId})
         </p>
       </header>
 
       <div className="metric-grid">
+        <Metric
+          label="Open P&L"
+          value={money(openPl)}
+          tone={plClass(openPl)}
+        />
         <Metric
           label="Realized P&L"
           value={money(data.totals.realizedPl)}
@@ -1106,6 +1188,206 @@ function PerformancePage({
         </div>
         <MonthlyBars monthly={data.monthly} />
       </section>
+    </>
+  );
+}
+
+function schwabHashError(): string | null {
+  const hash = location.hash.replace(/^#\/?/, "");
+  const qIndex = hash.indexOf("?");
+  if (qIndex < 0) return null;
+  return new URLSearchParams(hash.slice(qIndex + 1)).get("schwab_error");
+}
+
+function SchwabPage({
+  positions,
+  performance,
+  assetFilter,
+  oauthError,
+  onAuthorize,
+  authorizing,
+  authorizeError,
+}: {
+  positions?: SchwabPositionsResponse;
+  performance?: SchwabPerformanceResponse;
+  assetFilter: AssetFilter;
+  oauthError: string | null;
+  onAuthorize: () => void;
+  authorizing: boolean;
+  authorizeError: string | null;
+}) {
+  const connected = Boolean(positions?.connected);
+  const brokerPositions = (positions?.brokerPositions ?? []).filter((p) =>
+    matchesAssetFilter(p.symbol, assetFilter)
+  );
+  const openPl = filteredOpenPl(
+    assetFilter,
+    positions?.balances.openPl,
+    positions?.brokerPositions
+  );
+  const filteredPerf = performance
+    ? performanceForFilter(performance, assetFilter)
+    : undefined;
+  const historyFrom = performance?.historyFrom?.slice(0, 10);
+  const historyTo = performance?.historyTo?.slice(0, 10);
+
+  return (
+    <>
+      <header className="workbench-header">
+        <p className="workbench-kicker">Charles Schwab · read-only</p>
+        <h1>Schwab</h1>
+        <p>
+          Separate strategy book
+          {positions?.accountId ? (
+            <>
+              {" "}
+              · <code>{positions.accountId}</code>
+            </>
+          ) : null}
+          {historyFrom && historyTo ? (
+            <>
+              {" "}
+              · realized window {historyFrom} → {historyTo}
+            </>
+          ) : null}
+        </p>
+      </header>
+
+      <div className="stats-inline">
+        <StatusDot
+          ok={connected}
+          label={
+            connected
+              ? "Schwab connected"
+              : positions?.configured
+                ? "Schwab disconnected"
+                : "Schwab not configured"
+          }
+        />
+        {positions?.needsReauth ? (
+          <span className="status warn">Re-authorize</span>
+        ) : null}
+        <button
+          type="button"
+          disabled={authorizing || positions?.configured === false}
+          onClick={onAuthorize}
+        >
+          {authorizing ? "Opening Schwab…" : "Authorize Schwab"}
+        </button>
+      </div>
+
+      {oauthError && <p className="error-msg">{oauthError}</p>}
+      {authorizeError && <p className="error-msg">{authorizeError}</p>}
+      {positions && !connected && (
+        <p>
+          {positions.message ||
+            "Set SCHWAB_APP_KEY, SCHWAB_APP_SECRET, and SCHWAB_CALLBACK_URL, then authorize."}
+        </p>
+      )}
+
+      {connected && (
+        <>
+          <div className="metric-grid">
+            <Metric
+              label="Equity"
+              value={money(positions?.balances.totalEquity)}
+            />
+            <Metric label="Cash" value={money(positions?.balances.totalCash)} />
+            <Metric
+              label="Open P&L"
+              value={money(openPl)}
+              tone={plClass(openPl)}
+            />
+            <Metric
+              label="Realized P&L"
+              value={money(filteredPerf?.totals.realizedPl)}
+              tone={plClass(filteredPerf?.totals.realizedPl)}
+            />
+            <Metric
+              label="Win rate"
+              value={pct(filteredPerf?.totals.winRate)}
+            />
+          </div>
+
+          <section className="panel">
+            <div className="panel-head">
+              <h2 className="panel-title">Broker positions</h2>
+              <span>{brokerPositions.length} symbols</span>
+            </div>
+            {brokerPositions.length === 0 ? (
+              <p>
+                {assetFilter === "all"
+                  ? "No open Schwab positions (cash)."
+                  : `No open Schwab ${assetFilter} positions.`}
+              </p>
+            ) : (
+              <div className="table-wrap">
+                <table className="data">
+                  <thead>
+                    <tr>
+                      <th>Symbol</th>
+                      <th>Qty</th>
+                      <th>Avg cost</th>
+                      <th>Last</th>
+                      <th>Mkt value</th>
+                      <th>Open P&L</th>
+                      <th>P&L %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {brokerPositions.map((p) => (
+                      <tr key={p.symbol}>
+                        <td>{p.symbol}</td>
+                        <td>{p.quantity}</td>
+                        <td>{money(p.avgCost)}</td>
+                        <td>{money(p.lastPrice)}</td>
+                        <td>{money(p.marketValue)}</td>
+                        <td>
+                          <span className={`pl ${plClass(p.openPl)}`.trim()}>
+                            {money(p.openPl)}
+                          </span>
+                        </td>
+                        <td>
+                          <span
+                            className={`pl ${plClass(p.openPlPercent)}`.trim()}
+                          >
+                            {p.openPlPercent == null
+                              ? "—"
+                              : `${p.openPlPercent.toFixed(1)}%`}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          {filteredPerf && (
+            <>
+              <ClosedTradesCsv
+                trades={filteredPerf.recentClosed}
+                mode="schwab"
+                accountId={filteredPerf.accountId}
+                assetFilter={assetFilter}
+              />
+              <section className="panel">
+                <div className="panel-head">
+                  <h2 className="panel-title">Cumulative</h2>
+                </div>
+                <CumulativeChart series={filteredPerf.cumulativeSeries} />
+              </section>
+              <section className="panel">
+                <div className="panel-head">
+                  <h2 className="panel-title">Monthly P&amp;L</h2>
+                </div>
+                <MonthlyBars monthly={filteredPerf.monthly} />
+              </section>
+            </>
+          )}
+        </>
+      )}
     </>
   );
 }
@@ -1156,7 +1438,10 @@ export default function App() {
     queryKey: ["positions", mode],
     queryFn: fetchPositions,
     refetchInterval: 30_000,
-    enabled: route === "positions" || route === "overview",
+    enabled:
+      route === "positions" ||
+      route === "overview" ||
+      route === "performance",
   });
 
   const perfQ = useQuery({
@@ -1164,6 +1449,20 @@ export default function App() {
     queryFn: fetchPerformance,
     refetchInterval: 60_000,
     enabled: route === "performance" || route === "overview",
+  });
+
+  const schwabPositionsQ = useQuery({
+    queryKey: ["schwab-positions"],
+    queryFn: fetchSchwabPositions,
+    refetchInterval: 30_000,
+    enabled: route === "schwab" || route === "overview",
+  });
+
+  const schwabPerfQ = useQuery({
+    queryKey: ["schwab-performance"],
+    queryFn: fetchSchwabPerformance,
+    refetchInterval: 60_000,
+    enabled: route === "schwab" || route === "overview",
   });
 
   const filteredPerformance = useMemo(
@@ -1179,6 +1478,8 @@ export default function App() {
     void qc.invalidateQueries({ queryKey: ["orders"] });
     void qc.invalidateQueries({ queryKey: ["positions"] });
     void qc.invalidateQueries({ queryKey: ["performance"] });
+    void qc.invalidateQueries({ queryKey: ["schwab-positions"] });
+    void qc.invalidateQueries({ queryKey: ["schwab-performance"] });
   };
 
   const rebalanceMut = useMutation({
@@ -1192,6 +1493,12 @@ export default function App() {
   const bothMut = useMutation({
     mutationFn: runRebalanceAndPlace,
     onSuccess: invalidateAll,
+  });
+  const authorizeSchwabMut = useMutation({
+    mutationFn: fetchSchwabAuthUrl,
+    onSuccess: (data) => {
+      window.location.href = data.url;
+    },
   });
   const executionMut = useMutation({
     mutationFn: updateExecution,
@@ -1229,6 +1536,7 @@ export default function App() {
     { id: "positions", href: "#/positions", label: "Positions" },
     { id: "orders", href: "#/orders", label: "Orders" },
     { id: "performance", href: "#/performance", label: "Performance" },
+    { id: "schwab", href: "#/schwab", label: "Schwab" },
   ];
 
   return (
@@ -1391,6 +1699,8 @@ export default function App() {
           status={statusQ.data}
           positions={positionsQ.data}
           performance={filteredPerformance}
+          schwabPositions={schwabPositionsQ.data}
+          schwabPerformance={schwabPerfQ.data}
           ordersPending={filteredOrdersPending}
           assetFilter={assetFilter}
         />
@@ -1432,8 +1742,52 @@ export default function App() {
             <p className="error-msg">{(perfQ.error as Error).message}</p>
           )}
           {filteredPerformance && (
-            <PerformancePage data={filteredPerformance} assetFilter={assetFilter} />
+            <PerformancePage
+              data={filteredPerformance}
+              assetFilter={assetFilter}
+              openPl={filteredOpenPl(
+                assetFilter,
+                filteredPerformance.balances.openPl ??
+                  positionsQ.data?.balances.openPl,
+                positionsQ.data?.brokerPositions
+              )}
+            />
           )}
+        </>
+      )}
+
+      {route === "schwab" && (
+        <>
+          {(schwabPositionsQ.isLoading || schwabPerfQ.isLoading) && (
+            <p>Loading Schwab…</p>
+          )}
+          {schwabPositionsQ.isError && (
+            <p className="error-msg">
+              {(schwabPositionsQ.error as Error).message}
+            </p>
+          )}
+          {schwabPerfQ.isError && (
+            <p className="error-msg">{(schwabPerfQ.error as Error).message}</p>
+          )}
+          <SchwabPage
+            positions={schwabPositionsQ.data}
+            performance={schwabPerfQ.data}
+            assetFilter={assetFilter}
+            oauthError={schwabHashError()}
+            onAuthorize={() => {
+              if (authRequired) {
+                setLoginOpen(true);
+                return;
+              }
+              authorizeSchwabMut.mutate();
+            }}
+            authorizing={authorizeSchwabMut.isPending}
+            authorizeError={
+              authorizeSchwabMut.isError
+                ? (authorizeSchwabMut.error as Error).message
+                : null
+            }
+          />
         </>
       )}
 
