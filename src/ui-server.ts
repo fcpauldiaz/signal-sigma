@@ -10,6 +10,10 @@ import {
 } from './services/signalSigmaApi';
 import { SignalSigmaScraper } from './services/signalSigmaScraper';
 import { TradierApi, resolveQuotePrice } from './services/tradierApi';
+import { SchwabAuth } from './services/schwabAuth';
+import { SchwabApi } from './services/schwabApi';
+import { aggregateClosedTrades } from './utils/closedTrades';
+import { TradierBalances, TradierClosedPosition } from './types';
 import { executeOpenOrders } from './services/openOrderExecutor';
 import { TtlCache } from './utils/ttlCache';
 import {
@@ -87,6 +91,11 @@ function sendJson(res: http.ServerResponse, status: number, data: unknown): void
     ...CORS_HEADERS,
   });
   res.end(JSON.stringify(data));
+}
+
+function sendRedirect(res: http.ServerResponse, location: string): void {
+  res.writeHead(302, { Location: location, ...CORS_HEADERS });
+  res.end();
 }
 
 function parseBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
@@ -293,11 +302,15 @@ async function buildStatus(mode: TradingMode) {
     };
   }
 
-  const tradierStatus = await checkTradier(tradier);
+  const [tradierStatus, schwab] = await Promise.all([
+    checkTradier(tradier),
+    checkSchwab(),
+  ]);
 
   return {
     signalSigma,
     tradier: tradierStatus,
+    schwab,
     tradingMode: mode,
     modes: modeSummary(),
     execution: getExecutionSettings(),
@@ -503,71 +516,130 @@ async function buildPositions(mode: TradingMode) {
   };
 }
 
+function emptyBalances(): TradierBalances {
+  return {
+    totalEquity: null,
+    totalCash: null,
+    marketValue: null,
+    openPl: null,
+    closePl: null,
+    pendingOrdersCount: null,
+  };
+}
+
+function schwabDisconnectedPayload(extra: Record<string, unknown> = {}) {
+  const auth = SchwabAuth.fromEnv();
+  const status = auth.getStatus();
+  return {
+    connected: false,
+    configured: status.configured,
+    needsReauth: status.needsReauth,
+    message: status.message,
+    refreshExpiresAt: status.refreshExpiresAt,
+    accountId: '',
+    balances: emptyBalances(),
+    ...extra,
+  };
+}
+
+async function checkSchwab(): Promise<{
+  ok: boolean;
+  configured: boolean;
+  needsReauth: boolean;
+  message: string;
+  accountId: string | null;
+  refreshExpiresAt: string | null;
+  totalEquity: number | null;
+}> {
+  const status = SchwabAuth.fromEnv().getStatus();
+  return {
+    ok: status.connected,
+    configured: status.configured,
+    needsReauth: status.needsReauth,
+    message: status.message,
+    accountId: null,
+    refreshExpiresAt: status.refreshExpiresAt,
+    totalEquity: null,
+  };
+}
+
+async function buildSchwabPositions() {
+  const auth = SchwabAuth.fromEnv();
+  const status = auth.getStatus();
+  if (!status.configured || !status.connected) {
+    return schwabDisconnectedPayload({ brokerPositions: [] });
+  }
+
+  const api = new SchwabApi(auth);
+  const snapshot = await api.getAccountSnapshot();
+  return {
+    connected: true,
+    configured: true,
+    needsReauth: status.needsReauth,
+    message: status.message,
+    refreshExpiresAt: status.refreshExpiresAt,
+    accountId: snapshot.accountId,
+    balances: snapshot.balances,
+    brokerPositions: snapshot.positions,
+  };
+}
+
+async function buildSchwabPerformance() {
+  const auth = SchwabAuth.fromEnv();
+  const status = auth.getStatus();
+  if (!status.configured || !status.connected) {
+    return schwabDisconnectedPayload({
+      totals: {
+        realizedPl: 0,
+        tradeCount: 0,
+        winners: 0,
+        losers: 0,
+        winRate: 0,
+      },
+      monthly: [],
+      cumulativeSeries: [],
+      recentClosed: [] as TradierClosedPosition[],
+      historyFrom: null,
+      historyTo: null,
+    });
+  }
+
+  const api = new SchwabApi(auth);
+  const [snapshot, closed] = await Promise.all([
+    api.getAccountSnapshot(),
+    api.getClosedPositions(),
+  ]);
+  const aggregated = aggregateClosedTrades(closed.trades, CLOSED_TRADE_LIMIT);
+  return {
+    connected: true,
+    configured: true,
+    needsReauth: status.needsReauth,
+    message: status.message,
+    refreshExpiresAt: status.refreshExpiresAt,
+    accountId: snapshot.accountId,
+    balances: {
+      ...snapshot.balances,
+      closePl: aggregated.totals.realizedPl,
+    },
+    historyFrom: closed.historyFrom,
+    historyTo: closed.historyTo,
+    ...aggregated,
+  };
+}
+
 async function buildPerformance(mode: TradingMode) {
   const { tradierApi, tradier } = createServices(mode);
   const [closed, balances] = await Promise.all([
     tradierApi.getClosedPositions(CLOSED_TRADE_LIMIT),
     tradierApi.getBalances(),
   ]);
-
-  const sorted = closed
-    .slice()
-    .sort((a, b) => a.closeDate.localeCompare(b.closeDate));
-
-  const monthlyMap = new Map<string, number>();
-  let cumulative = 0;
-  const cumulativeSeries: Array<{
-    date: string;
-    cumulative: number;
-    gainLoss: number;
-    symbol: string;
-    quantity: number;
-    cost: number;
-    proceeds: number;
-    gainLossPercent: number;
-    openDate: string;
-    closeDate: string;
-  }> = [];
-
-  for (const trade of sorted) {
-    const month = trade.closeDate.slice(0, 7);
-    monthlyMap.set(month, (monthlyMap.get(month) || 0) + trade.gainLoss);
-    cumulative += trade.gainLoss;
-    cumulativeSeries.push({
-      date: trade.closeDate.slice(0, 10),
-      cumulative,
-      gainLoss: trade.gainLoss,
-      symbol: trade.symbol,
-      quantity: trade.quantity,
-      cost: trade.cost,
-      proceeds: trade.proceeds,
-      gainLossPercent: trade.gainLossPercent,
-      openDate: trade.openDate,
-      closeDate: trade.closeDate,
-    });
-  }
-
-  const monthly = [...monthlyMap.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([month, gainLoss]) => ({ month, gainLoss }));
-
-  const winners = sorted.filter((t) => t.gainLoss > 0).length;
-  const losers = sorted.filter((t) => t.gainLoss < 0).length;
+  const aggregated = aggregateClosedTrades(closed, CLOSED_TRADE_LIMIT);
 
   return {
     mode: tradier.mode,
     accountId: tradier.accountId,
     balances,
-    totals: {
-      realizedPl: cumulative,
-      tradeCount: sorted.length,
-      winners,
-      losers,
-      winRate: sorted.length ? winners / sorted.length : 0,
-    },
-    monthly,
-    cumulativeSeries,
-    recentClosed: sorted.slice().reverse().slice(0, CLOSED_TRADE_LIMIT),
+    ...aggregated,
   };
 }
 
@@ -704,6 +776,39 @@ export function startUiServer(): http.Server {
         return;
       }
 
+      if (pathname === '/api/schwab/callback' && req.method === 'GET') {
+        const oauthError = url.searchParams.get('error');
+        const code = url.searchParams.get('code');
+        const state = url.searchParams.get('state');
+        const auth = SchwabAuth.fromEnv();
+        if (oauthError) {
+          sendRedirect(
+            res,
+            `/#/schwab?schwab_error=${encodeURIComponent(oauthError)}`
+          );
+          return;
+        }
+        if (!code || !auth.consumeState(state)) {
+          sendRedirect(
+            res,
+            `/#/schwab?schwab_error=${encodeURIComponent('invalid_oauth_callback')}`
+          );
+          return;
+        }
+        try {
+          await auth.exchangeCode(code);
+          sendRedirect(res, '/#/schwab');
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          sendRedirect(
+            res,
+            `/#/schwab?schwab_error=${encodeURIComponent(message)}`
+          );
+        }
+        return;
+      }
+
       if (pathname.startsWith('/api/') && !requireAuth(req, res)) {
         return;
       }
@@ -762,6 +867,33 @@ export function startUiServer(): http.Server {
       if (pathname === '/api/performance' && req.method === 'GET') {
         const mode = resolveRequestMode(req, url);
         sendJson(res, 200, await buildPerformance(mode));
+        return;
+      }
+
+      if (pathname === '/api/schwab/auth/url' && req.method === 'GET') {
+        const auth = SchwabAuth.fromEnv();
+        if (!auth.isConfigured()) {
+          sendJson(res, 400, {
+            error:
+              'Schwab is not configured. Set SCHWAB_APP_KEY, SCHWAB_APP_SECRET, and SCHWAB_CALLBACK_URL.',
+          });
+          return;
+        }
+        const { url: authorizeUrl } = auth.buildAuthorizeUrl();
+        sendJson(res, 200, {
+          url: authorizeUrl,
+          callbackUrl: auth.getCallbackUrl(),
+        });
+        return;
+      }
+
+      if (pathname === '/api/schwab/positions' && req.method === 'GET') {
+        sendJson(res, 200, await buildSchwabPositions());
+        return;
+      }
+
+      if (pathname === '/api/schwab/performance' && req.method === 'GET') {
+        sendJson(res, 200, await buildSchwabPerformance());
         return;
       }
 

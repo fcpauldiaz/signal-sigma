@@ -43,6 +43,15 @@ export interface StatusResponse {
     paper: boolean;
     live: boolean;
   };
+  schwab?: {
+    ok: boolean;
+    configured: boolean;
+    needsReauth: boolean;
+    message: string;
+    accountId: string | null;
+    refreshExpiresAt: string | null;
+    totalEquity: number | null;
+  };
   schedules: {
     rebalance: string;
     orders: string;
@@ -154,6 +163,31 @@ export interface PerformanceResponse {
   }>;
 }
 
+export interface SchwabConnection {
+  connected: boolean;
+  configured: boolean;
+  needsReauth: boolean;
+  message: string;
+  refreshExpiresAt: string | null;
+}
+
+export interface SchwabPositionsResponse extends SchwabConnection {
+  accountId: string;
+  balances: PositionsResponse["balances"];
+  brokerPositions: PositionsResponse["brokerPositions"];
+}
+
+export interface SchwabPerformanceResponse extends SchwabConnection {
+  accountId: string;
+  balances: PositionsResponse["balances"];
+  historyFrom: string | null;
+  historyTo: string | null;
+  totals: PerformanceResponse["totals"];
+  monthly: PerformanceResponse["monthly"];
+  cumulativeSeries: PerformanceResponse["cumulativeSeries"];
+  recentClosed: PerformanceResponse["recentClosed"];
+}
+
 let _authToken: string | null = localStorage.getItem("signal_sigma_token");
 let _tradingMode: TradingMode =
   (localStorage.getItem("signal_sigma_mode") as TradingMode | null) === "live"
@@ -243,6 +277,27 @@ export async function fetchPositions(): Promise<PositionsResponse> {
 
 export async function fetchPerformance(): Promise<PerformanceResponse> {
   const r = await fetch(withMode("/api/performance"), { headers: authHeaders() });
+  if (!r.ok) throw new Error(await parseError(r));
+  return r.json();
+}
+
+export async function fetchSchwabAuthUrl(): Promise<{
+  url: string;
+  callbackUrl: string | null;
+}> {
+  const r = await fetch("/api/schwab/auth/url", { headers: authHeaders() });
+  if (!r.ok) throw new Error(await parseError(r));
+  return r.json();
+}
+
+export async function fetchSchwabPositions(): Promise<SchwabPositionsResponse> {
+  const r = await fetch("/api/schwab/positions", { headers: authHeaders() });
+  if (!r.ok) throw new Error(await parseError(r));
+  return r.json();
+}
+
+export async function fetchSchwabPerformance(): Promise<SchwabPerformanceResponse> {
+  const r = await fetch("/api/schwab/performance", { headers: authHeaders() });
   if (!r.ok) throw new Error(await parseError(r));
   return r.json();
 }
