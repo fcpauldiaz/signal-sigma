@@ -2,6 +2,7 @@ import { TradierClosedPosition } from '../types';
 
 export type ClosedTradeTotals = {
   realizedPl: number;
+  realizedYtd: number;
   tradeCount: number;
   winners: number;
   losers: number;
@@ -69,10 +70,17 @@ export function aggregateClosedTrades(
 
   const winners = sorted.filter((t) => t.gainLoss > 0).length;
   const losers = sorted.filter((t) => t.gainLoss < 0).length;
+  const year = calendarYearEt();
+  const realizedYtd = sorted.reduce(
+    (sum, trade) =>
+      closeYear(trade.closeDate) === year ? sum + trade.gainLoss : sum,
+    0
+  );
 
   return {
     totals: {
       realizedPl: cumulative,
+      realizedYtd,
       tradeCount: sorted.length,
       winners,
       losers,
@@ -82,4 +90,15 @@ export function aggregateClosedTrades(
     cumulativeSeries,
     recentClosed: sorted.slice().reverse().slice(0, recentLimit),
   };
+}
+
+export function calendarYearEt(now = new Date()): string {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+  }).format(now);
+}
+
+export function closeYear(closeDate: string): string {
+  return closeDate.slice(0, 4);
 }

@@ -133,6 +133,7 @@ export interface PerformanceResponse {
   balances: PositionsResponse["balances"];
   totals: {
     realizedPl: number;
+    realizedYtd: number;
     tradeCount: number;
     winners: number;
     losers: number;
