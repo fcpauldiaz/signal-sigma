@@ -591,6 +591,7 @@ async function buildSchwabPerformance() {
     return schwabDisconnectedPayload({
       totals: {
         realizedPl: 0,
+        realizedYtd: 0,
         tradeCount: 0,
         winners: 0,
         losers: 0,

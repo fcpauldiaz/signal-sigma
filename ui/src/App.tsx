@@ -93,6 +93,55 @@ function pct(n: number | null | undefined): string {
   return `${(n * 100).toFixed(1)}%`;
 }
 
+function calendarYearEt(): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+  }).format(new Date());
+}
+
+function realizedYtdFromTrades(
+  trades: Array<{ closeDate: string; gainLoss: number }>
+): number {
+  const year = calendarYearEt();
+  return trades.reduce(
+    (sum, trade) =>
+      trade.closeDate.slice(0, 4) === year ? sum + trade.gainLoss : sum,
+    0
+  );
+}
+
+function ytdTotal(
+  realizedYtd: number | undefined,
+  openPl: number | null | undefined
+): number {
+  return (realizedYtd ?? 0) + (openPl ?? 0);
+}
+
+function ytdReturnPct(
+  ytdPl: number,
+  equity: number | null | undefined
+): number | null {
+  if (equity == null || Number.isNaN(equity)) return null;
+  const startEquity = equity - ytdPl;
+  if (startEquity === 0) return null;
+  return ytdPl / startEquity;
+}
+
+function formatYtd(
+  realizedYtd: number | undefined,
+  openPl: number | null | undefined,
+  equity: number | null | undefined
+): { pl: number; value: string; tone: "" | "pos" | "neg" } {
+  const pl = ytdTotal(realizedYtd, openPl);
+  const percent = ytdReturnPct(pl, equity);
+  return {
+    pl,
+    value: `${money(pl)} · ${pct(percent)}`,
+    tone: plClass(pl),
+  };
+}
+
 function plClass(n: number | null | undefined): "" | "pos" | "neg" {
   if (n == null || n === 0) return "";
   return n > 0 ? "pos" : "neg";
@@ -233,6 +282,7 @@ function performanceForFilter<
     ...data,
     totals: {
       realizedPl: cumulative,
+      realizedYtd: realizedYtdFromTrades(sorted),
       tradeCount: sorted.length,
       winners,
       losers,
@@ -738,6 +788,25 @@ function OverviewPage({
     realized != null || schwabRealized != null
       ? (realized ?? 0) + (schwabRealized ?? 0)
       : null;
+  const tradierYtd = formatYtd(
+    performance?.totals.realizedYtd ??
+      (performance ? realizedYtdFromTrades(performance.recentClosed) : 0),
+    openPl,
+    equity
+  );
+  const schwabYtd = formatYtd(
+    schwabPerformance?.totals.realizedYtd ??
+      (schwabPerformance
+        ? realizedYtdFromTrades(schwabPerformance.recentClosed)
+        : 0),
+    schwabOpenPl,
+    schwabEquity
+  );
+  const combinedYtdPl = tradierYtd.pl + (schwabPositions?.connected ? schwabYtd.pl : 0);
+  const combinedYtd = {
+    value: `${money(combinedYtdPl)} · ${pct(ytdReturnPct(combinedYtdPl, combinedEquity))}`,
+    tone: plClass(combinedYtdPl),
+  };
 
   return (
     <>
@@ -784,6 +853,11 @@ function OverviewPage({
           value={money(realized)}
           tone={plClass(realized)}
         />
+        <Metric
+          label={`YTD P&L · ${calendarYearEt()}`}
+          value={tradierYtd.value}
+          tone={tradierYtd.tone}
+        />
         <Metric label="Open orders" value={String(ordersPending)} />
       </div>
 
@@ -804,6 +878,11 @@ function OverviewPage({
               label="Combined realized"
               value={money(combinedRealized)}
               tone={plClass(combinedRealized)}
+            />
+            <Metric
+              label={`Combined YTD · ${calendarYearEt()}`}
+              value={combinedYtd.value}
+              tone={combinedYtd.tone}
             />
             <Metric
               label="Schwab equity"
@@ -1139,6 +1218,11 @@ function PerformancePage({
   assetFilter: AssetFilter;
   openPl: number | null | undefined;
 }) {
+  const ytd = formatYtd(
+    data.totals.realizedYtd ?? realizedYtdFromTrades(data.recentClosed),
+    openPl,
+    data.balances.totalEquity
+  );
   return (
     <>
       <header className="workbench-header">
@@ -1159,6 +1243,11 @@ function PerformancePage({
           label="Realized P&L"
           value={money(data.totals.realizedPl)}
           tone={plClass(data.totals.realizedPl)}
+        />
+        <Metric
+          label={`YTD P&L · ${calendarYearEt()}`}
+          value={ytd.value}
+          tone={ytd.tone}
         />
         <Metric label="Trades" value={String(data.totals.tradeCount)} />
         <Metric label="Win rate" value={pct(data.totals.winRate)} />
@@ -1230,6 +1319,12 @@ function SchwabPage({
     : undefined;
   const historyFrom = performance?.historyFrom?.slice(0, 10);
   const historyTo = performance?.historyTo?.slice(0, 10);
+  const ytd = formatYtd(
+    filteredPerf?.totals.realizedYtd ??
+      (filteredPerf ? realizedYtdFromTrades(filteredPerf.recentClosed) : 0),
+    openPl,
+    positions?.balances.totalEquity
+  );
 
   return (
     <>
@@ -1302,6 +1397,11 @@ function SchwabPage({
               label="Realized P&L"
               value={money(filteredPerf?.totals.realizedPl)}
               tone={plClass(filteredPerf?.totals.realizedPl)}
+            />
+            <Metric
+              label={`YTD P&L · ${calendarYearEt()}`}
+              value={ytd.value}
+              tone={ytd.tone}
             />
             <Metric
               label="Win rate"
