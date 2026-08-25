@@ -1569,6 +1569,13 @@ export default function App() {
     () => (perfQ.data ? performanceForFilter(perfQ.data, assetFilter) : undefined),
     [perfQ.data, assetFilter]
   );
+  const filteredSchwabPerformance = useMemo(
+    () =>
+      schwabPerfQ.data
+        ? performanceForFilter(schwabPerfQ.data, assetFilter)
+        : undefined,
+    [schwabPerfQ.data, assetFilter]
+  );
   const filteredOrdersPending =
     ordersQ.data?.orders.filter((o) => matchesAssetFilter(o.symbol, assetFilter))
       .length ?? 0;
@@ -1800,7 +1807,7 @@ export default function App() {
           positions={positionsQ.data}
           performance={filteredPerformance}
           schwabPositions={schwabPositionsQ.data}
-          schwabPerformance={schwabPerfQ.data}
+          schwabPerformance={filteredSchwabPerformance}
           ordersPending={filteredOrdersPending}
           assetFilter={assetFilter}
         />
