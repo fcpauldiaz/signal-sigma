@@ -37,8 +37,10 @@ import {
 import {
   isExpoPushToken,
   notifyDeskJob,
+  notifyLiveExecution,
   registerPushToken,
 } from './utils/deskNotify';
+import { requestClientIp } from './utils/requestClientIp';
 
 const UI_PORT = parseInt(process.env.UI_PORT || '3000', 10);
 const UI_DIST = path.join(__dirname, '..', 'ui', 'dist');
@@ -836,7 +838,17 @@ export function startUiServer(): http.Server {
         const patch: { paper?: boolean; live?: boolean } = {};
         if (typeof body.paper === 'boolean') patch.paper = body.paper;
         if (typeof body.live === 'boolean') patch.live = body.live;
+        const previous = getExecutionSettings();
         const execution = setExecutionSettings(patch);
+        if (
+          typeof patch.live === 'boolean' &&
+          previous.live !== execution.live
+        ) {
+          await notifyLiveExecution({
+            enabled: execution.live,
+            ip: requestClientIp(req),
+          });
+        }
         sendJson(res, 200, { execution });
         return;
       }

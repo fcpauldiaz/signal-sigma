@@ -190,3 +190,14 @@ export async function notifyOrders(
     onlyIfActivity: options?.onlyIfActivity,
   });
 }
+
+export async function notifyLiveExecution(input: {
+  enabled: boolean;
+  ip: string;
+}): Promise<void> {
+  await sendDeskNotification({
+    title: input.enabled ? 'Live execution on' : 'Live execution off',
+    body: `from ${input.ip}`,
+    href: '/(tabs)',
+  });
+}
