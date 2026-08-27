@@ -43,6 +43,9 @@ export interface StatusResponse {
     paper: boolean;
     live: boolean;
   };
+  push?: {
+    devices: number;
+  };
   schwab?: {
     ok: boolean;
     configured: boolean;
@@ -314,7 +317,10 @@ export async function fetchExecution(): Promise<{
 export async function updateExecution(patch: {
   paper?: boolean;
   live?: boolean;
-}): Promise<{ execution: { paper: boolean; live: boolean } }> {
+}): Promise<{
+  execution: { paper: boolean; live: boolean };
+  push?: { devices: number; sent: boolean; warning?: string };
+}> {
   const r = await fetch("/api/execution", {
     method: "POST",
     headers: { ...authHeaders(), "Content-Type": "application/json" },

@@ -20,8 +20,18 @@ const TOKENS_PATH = path.join(DATA_DIR, 'push-tokens.json');
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 const EXPO_TOKEN_RE = /^(ExponentPushToken|ExpoPushToken)\[[^\]]+\]$/;
 
+export type DeskPushSendResult = {
+  devices: number;
+  sent: boolean;
+  warning?: string;
+};
+
 export function isExpoPushToken(token: string): boolean {
   return EXPO_TOKEN_RE.test(token.trim());
+}
+
+export function pushDeviceCount(): number {
+  return readTokens().length;
 }
 
 function readTokens(): string[] {
@@ -52,6 +62,7 @@ export function registerPushToken(token: string): void {
     throw new Error('Invalid Expo push token');
   }
   writeTokens([...readTokens(), trimmed]);
+  console.log(`Desk push token saved (${pushDeviceCount()} device(s))`);
 }
 
 export function removePushToken(token: string): void {
@@ -97,15 +108,25 @@ export async function sendDeskNotification(input: {
   title: string;
   body: string;
   href?: string;
-}): Promise<void> {
+}): Promise<DeskPushSendResult> {
   const tokens = readTokens();
-  if (tokens.length === 0) return;
+  if (tokens.length === 0) {
+    console.warn('Desk push skipped: no devices registered');
+    return {
+      devices: 0,
+      sent: false,
+      warning:
+        'No iPhone registered for alerts. Unlock the Signal Sigma app and allow notifications.',
+    };
+  }
 
   const messages = tokens.map((to) => ({
     to,
     title: input.title,
     body: input.body,
     sound: 'default' as const,
+    priority: 'high' as const,
+    channelId: 'desk',
     data: input.href ? { href: input.href } : {},
   }));
 
@@ -120,22 +141,38 @@ export async function sendDeskNotification(input: {
       body: JSON.stringify(messages),
     });
     if (!response.ok) {
-      console.error(`Expo push failed: ${response.status} ${response.statusText}`);
-      return;
+      const warning = `Expo push failed: ${response.status} ${response.statusText}`;
+      console.error(warning);
+      return { devices: tokens.length, sent: false, warning };
     }
     const payload = (await response.json()) as { data?: ExpoPushTicket[] };
     const tickets = payload.data ?? [];
+    const ticketErrors: string[] = [];
     tickets.forEach((ticket, index) => {
-      if (ticket.status === 'error' && ticket.details?.error === 'DeviceNotRegistered') {
+      if (ticket.status !== 'error') return;
+      const detail = ticket.message || ticket.details?.error || 'unknown';
+      ticketErrors.push(detail);
+      console.error(`Expo push ticket error [${index}]: ${detail}`);
+      if (ticket.details?.error === 'DeviceNotRegistered') {
         const stale = tokens[index];
         if (stale) removePushToken(stale);
       }
     });
+    if (ticketErrors.length > 0) {
+      return {
+        devices: tokens.length,
+        sent: false,
+        warning: `Expo rejected the alert: ${ticketErrors.join('; ')}`,
+      };
+    }
+    console.log(`Desk push sent to ${tokens.length} device(s): ${input.title}`);
+    return { devices: tokens.length, sent: true };
   } catch (error) {
-    console.error(
-      'Expo push error:',
-      error instanceof Error ? error.message : error
-    );
+    const warning = `Expo push error: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+    console.error(warning);
+    return { devices: tokens.length, sent: false, warning };
   }
 }
 
@@ -194,8 +231,8 @@ export async function notifyOrders(
 export async function notifyLiveExecution(input: {
   enabled: boolean;
   ip: string;
-}): Promise<void> {
-  await sendDeskNotification({
+}): Promise<DeskPushSendResult> {
+  return sendDeskNotification({
     title: input.enabled ? 'Live execution on' : 'Live execution off',
     body: `from ${input.ip}`,
     href: '/(tabs)',

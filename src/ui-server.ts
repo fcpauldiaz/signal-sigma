@@ -38,7 +38,9 @@ import {
   isExpoPushToken,
   notifyDeskJob,
   notifyLiveExecution,
+  pushDeviceCount,
   registerPushToken,
+  type DeskPushSendResult,
 } from './utils/deskNotify';
 import { requestClientIp } from './utils/requestClientIp';
 
@@ -316,6 +318,7 @@ async function buildStatus(mode: TradingMode) {
     tradingMode: mode,
     modes: modeSummary(),
     execution: getExecutionSettings(),
+    push: { devices: pushDeviceCount() },
     schedules: {
       rebalance: process.env.REBALANCE_SCHEDULE || '0 14 * * 3',
       orders: process.env.ORDER_SCHEDULE || '0 14-20 * * 3',
@@ -840,16 +843,28 @@ export function startUiServer(): http.Server {
         if (typeof body.live === 'boolean') patch.live = body.live;
         const previous = getExecutionSettings();
         const execution = setExecutionSettings(patch);
+        let push: DeskPushSendResult | undefined;
         if (
           typeof patch.live === 'boolean' &&
           previous.live !== execution.live
         ) {
-          await notifyLiveExecution({
+          push = await notifyLiveExecution({
             enabled: execution.live,
             ip: requestClientIp(req),
           });
+        } else if (typeof patch.live === 'boolean') {
+          console.log(
+            `Live execution unchanged (${execution.live}); push not sent`
+          );
+          push = {
+            devices: pushDeviceCount(),
+            sent: false,
+            warning: `Live execution was already ${
+              execution.live ? 'on' : 'off'
+            }; no alert sent.`,
+          };
         }
-        sendJson(res, 200, { execution });
+        sendJson(res, 200, { execution, push });
         return;
       }
 
@@ -977,6 +992,7 @@ export function startUiServer(): http.Server {
 
   server.listen(UI_PORT, () => {
     console.log(`Signal Sigma UI listening on http://localhost:${UI_PORT}`);
+    console.log(`Desk push: ${pushDeviceCount()} device(s)`);
   });
 
   return server;

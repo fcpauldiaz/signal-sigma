@@ -1497,6 +1497,7 @@ export default function App() {
   const qc = useQueryClient();
   const [loginOpen, setLoginOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<DeskAction | null>(null);
+  const [pushWarning, setPushWarning] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(() => getAuthToken());
   const [mode, setMode] = useState<TradingMode>(() => getTradingMode());
   const [assetFilter, setAssetFilter] = useState<AssetFilter>(() =>
@@ -1609,7 +1610,8 @@ export default function App() {
   });
   const executionMut = useMutation({
     mutationFn: updateExecution,
-    onSuccess: () => {
+    onSuccess: (data) => {
+      setPushWarning(data.push?.warning ?? null);
       void qc.invalidateQueries({ queryKey: ["status"] });
     },
   });
@@ -1747,6 +1749,17 @@ export default function App() {
             />
             Live exec
           </label>
+          <span
+            className={`status ${
+              (statusQ.data?.push?.devices ?? 0) > 0 ? "connected" : "warn"
+            }`}
+          >
+            {(statusQ.data?.push?.devices ?? 0) > 0
+              ? `${statusQ.data?.push?.devices} phone${
+                  statusQ.data?.push?.devices === 1 ? "" : "s"
+                }`
+              : "No phone for alerts"}
+          </span>
         </div>
         <button
           type="button"
@@ -1782,6 +1795,7 @@ export default function App() {
         {!executionEnabled && (
           <span className="status warn">{mode} execution off</span>
         )}
+        {pushWarning && <span className="error-msg">{pushWarning}</span>}
         {(rebalanceMut.isError ||
           placeMut.isError ||
           bothMut.isError ||
