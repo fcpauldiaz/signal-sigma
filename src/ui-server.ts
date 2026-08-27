@@ -851,7 +851,7 @@ export function startUiServer(): http.Server {
           typeof patch.live === 'boolean' &&
           previous.live !== execution.live
         ) {
-          const origin = await requestClientOrigin(req);
+          const origin = requestClientOrigin(req);
           push = await notifyLiveExecution({
             enabled: execution.live,
             from: formatClientOrigin(origin),

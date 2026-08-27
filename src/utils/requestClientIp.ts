@@ -3,10 +3,10 @@ import type { IncomingHttpHeaders, IncomingMessage } from 'http';
 
 export type ClientOrigin = {
   ip: string;
+  city?: string;
   country?: string;
 };
 
-const GEO_TIMEOUT_MS = 1500;
 const SKIP_COUNTRY_CODES = new Set(['XX', 'T1', 'A1', 'A2']);
 const COUNTRY_NAMES = new Intl.DisplayNames(['en'], { type: 'region' });
 
@@ -21,6 +21,13 @@ function headerValues(
     .split(',')
     .map((part) => part.trim())
     .filter(Boolean);
+}
+
+function firstHeader(
+  headers: IncomingHttpHeaders,
+  name: string
+): string | undefined {
+  return headerValues(headers, name)[0];
 }
 
 function normalizeIp(ip: string): string {
@@ -79,57 +86,29 @@ export function requestClientIp(req: IncomingMessage): string {
   );
 }
 
-function countryFromCode(code: string | undefined): string | undefined {
-  if (!code) return undefined;
-  const normalized = code.trim().toUpperCase();
-  if (normalized.length !== 2 || SKIP_COUNTRY_CODES.has(normalized)) {
-    return undefined;
-  }
-  try {
-    return COUNTRY_NAMES.of(normalized) || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function countryFromCf(headers: IncomingHttpHeaders): string | undefined {
-  return countryFromCode(headerValues(headers, 'cf-ipcountry')[0]);
-}
-
-async function countryFromGeo(ip: string): Promise<string | undefined> {
-  if (!isPublicIp(ip)) return undefined;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), GEO_TIMEOUT_MS);
+  const code = firstHeader(headers, 'cf-ipcountry')?.trim().toUpperCase();
+  if (!code || code.length !== 2 || SKIP_COUNTRY_CODES.has(code)) {
+    return undefined;
+  }
   try {
-    const response = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}`, {
-      signal: controller.signal,
-      headers: { Accept: 'application/json' },
-    });
-    if (!response.ok) return undefined;
-    const payload = (await response.json()) as {
-      success?: boolean;
-      country?: string;
-      country_code?: string;
-    };
-    if (payload.success === false) return undefined;
-    if (payload.country?.trim()) return payload.country.trim();
-    return countryFromCode(payload.country_code);
+    return COUNTRY_NAMES.of(code) || undefined;
   } catch {
     return undefined;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
-export async function requestClientOrigin(
-  req: IncomingMessage
-): Promise<ClientOrigin> {
+export function requestClientOrigin(req: IncomingMessage): ClientOrigin {
   const ip = requestClientIp(req);
-  const country =
-    countryFromCf(req.headers) || (await countryFromGeo(ip));
-  return country ? { ip, country } : { ip };
+  const city = firstHeader(req.headers, 'cf-ipcity')?.trim() || undefined;
+  const country = countryFromCf(req.headers);
+  return {
+    ip,
+    ...(city ? { city } : {}),
+    ...(country ? { country } : {}),
+  };
 }
 
 export function formatClientOrigin(origin: ClientOrigin): string {
-  return origin.country ? `${origin.ip}, ${origin.country}` : origin.ip;
+  return [origin.ip, origin.city, origin.country].filter(Boolean).join(', ');
 }
