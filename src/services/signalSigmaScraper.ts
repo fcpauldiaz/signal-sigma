@@ -102,7 +102,7 @@ export class SignalSigmaScraper {
     console.log('  Step 1–2: Enter rebalance mode...');
     let rebalanceClicks = 0;
 
-    for (let attempt = 1; attempt <= 12; attempt++) {
+    for (let attempt = 1; attempt <= 15; attempt++) {
       if (await this.isInAdjustmentStep(page)) {
         console.log('  Rebalance adjustment UI ready (Next visible)');
         return;
@@ -113,14 +113,20 @@ export class SignalSigmaScraper {
         continue;
       }
 
-      const rebalanceBtn = page.getByRole('button', {
-        name: /rebalance portfolio/i,
-      });
-      if (await this.isVisible(rebalanceBtn, 1500) && rebalanceClicks < 3) {
+      const rebalanceBtn = page
+        .getByRole('button', { name: /rebalance portfolio/i })
+        .filter({ visible: true });
+      if ((await this.isVisible(rebalanceBtn, 1000)) && rebalanceClicks < 2) {
         rebalanceClicks += 1;
         console.log(`  Click Rebalance Portfolio (attempt ${rebalanceClicks})...`);
-        await rebalanceBtn.click({ timeout: 10000 });
-        await page.waitForTimeout(1500);
+        await rebalanceBtn.first().click({ timeout: 10000 });
+        const opened = await this.waitForGateOrAdjustment(page, 20000);
+        await this.logGateDebug(page);
+        if (!opened) {
+          console.warn('  No gate dialog after Rebalance click');
+          await this.saveDebugScreenshot(page, `rebalance-click-${rebalanceClicks}`);
+          continue;
+        }
         await this.handleOpenGate(page);
         continue;
       }
@@ -135,17 +141,56 @@ export class SignalSigmaScraper {
     );
   }
 
-  private visibleDialog(page: Page): Locator {
-    return page.getByRole('dialog').last();
+  private visibleDialogs(page: Page): Locator {
+    return page.getByRole('dialog').filter({ visible: true });
   }
 
   private async isGateOpen(page: Page): Promise<boolean> {
-    if (await this.isVisible(this.visibleDialog(page), 400)) {
+    if (await this.isVisible(this.visibleDialogs(page), 250)) {
+      return true;
+    }
+    if (
+      await this.isVisible(
+        page.getByRole('button', { name: /^(continue|discard|include)$/i }),
+        250
+      )
+    ) {
       return true;
     }
     return this.isVisible(
-      page.getByRole('button', { name: /^continue$/i }),
-      400
+      page.getByText(
+        /sync confirmation|rebalancing will sync|linked items|open orders/i
+      ),
+      250
+    );
+  }
+
+  private async waitForGateOrAdjustment(
+    page: Page,
+    timeoutMs: number
+  ): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (await this.isInAdjustmentStep(page)) {
+        return true;
+      }
+      if (await this.isGateOpen(page)) {
+        return true;
+      }
+      await page.waitForTimeout(250);
+    }
+    return false;
+  }
+
+  private async logGateDebug(page: Page): Promise<void> {
+    const total = await page.getByRole('dialog').count().catch(() => 0);
+    const visible = await this.visibleDialogs(page).count().catch(() => 0);
+    const continues = await page
+      .getByRole('button', { name: /continue/i })
+      .count()
+      .catch(() => 0);
+    console.log(
+      `  Gate debug: dialogs=${total} visible=${visible} continueButtons=${continues}`
     );
   }
 
@@ -155,8 +200,8 @@ export class SignalSigmaScraper {
         return;
       }
 
-      const dialog = this.visibleDialog(page);
-      if (await this.isVisible(dialog, 2000)) {
+      const dialog = this.visibleDialogs(page).last();
+      if (await this.isVisible(dialog, 1500)) {
         const dialogText = (
           (await dialog.innerText().catch(() => '')) || ''
         ).toLowerCase();
@@ -177,12 +222,12 @@ export class SignalSigmaScraper {
             dialog.getByRole('button', { name: /^discard$/i }),
             'Discard'
           );
-          await this.waitForAdjustmentOrTimeout(page, 20000);
+          await this.waitForAdjustmentOrTimeout(page, 45000);
           continue;
         }
 
         const continueInDialog = dialog.getByRole('button', {
-          name: /^continue$/i,
+          name: /continue/i,
         });
         if (await this.isVisible(continueInDialog, 1000)) {
           await this.clickDialogButton(page, continueInDialog, 'Continue');
@@ -194,7 +239,7 @@ export class SignalSigmaScraper {
         });
         if (await this.isVisible(discardInDialog, 1000)) {
           await this.clickDialogButton(page, discardInDialog, 'Discard');
-          await this.waitForAdjustmentOrTimeout(page, 15000);
+          await this.waitForAdjustmentOrTimeout(page, 20000);
           continue;
         }
 
@@ -202,7 +247,9 @@ export class SignalSigmaScraper {
         return;
       }
 
-      const continueBtn = page.getByRole('button', { name: /^continue$/i });
+      const continueBtn = page
+        .getByRole('button', { name: /continue/i })
+        .filter({ visible: true });
       if (await this.isVisible(continueBtn, 800)) {
         console.log('  Continue...');
         await this.clickDialogButton(page, continueBtn, 'Continue');
@@ -219,24 +266,31 @@ export class SignalSigmaScraper {
     label: string
   ): Promise<void> {
     console.log(`  Dialog ${label}...`);
-    const dialog = this.visibleDialog(page);
-    await button.scrollIntoViewIfNeeded().catch(() => undefined);
+    const target = button.filter({ visible: true }).first();
+    await target.scrollIntoViewIfNeeded().catch(() => undefined);
     try {
-      await button.click({ timeout: 10000 });
+      await target.click({ timeout: 10000 });
     } catch {
-      await button.click({ force: true, timeout: 10000 });
+      await target.click({ force: true, timeout: 10000 });
     }
 
-    const closed = await dialog
-      .waitFor({ state: 'hidden', timeout: 8000 })
-      .then(() => true)
-      .catch(() => false);
-    if (!closed && (await this.isVisible(button, 500))) {
-      console.log(`  Dialog still open after ${label}; retrying with force click`);
-      await button.click({ force: true, timeout: 5000 }).catch(() => undefined);
-      await dialog.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => undefined);
+    const deadline = Date.now() + 12000;
+    while (Date.now() < deadline) {
+      if (await this.isInAdjustmentStep(page)) {
+        return;
+      }
+      if (!(await target.isVisible().catch(() => false))) {
+        await page.waitForTimeout(800);
+        return;
+      }
+      await page.waitForTimeout(250);
     }
-    await page.waitForTimeout(1000);
+
+    if (await target.isVisible().catch(() => false)) {
+      console.log(`  Dialog still open after ${label}; retrying with force click`);
+      await target.click({ force: true, timeout: 5000 }).catch(() => undefined);
+      await page.waitForTimeout(1500);
+    }
   }
 
   private async waitForAdjustmentOrTimeout(
@@ -285,7 +339,10 @@ export class SignalSigmaScraper {
 
   private async isVisible(locator: Locator, timeout = 1500): Promise<boolean> {
     try {
-      await locator.first().waitFor({ state: 'visible', timeout });
+      await locator
+        .filter({ visible: true })
+        .first()
+        .waitFor({ state: 'visible', timeout });
       return true;
     } catch {
       return false;
