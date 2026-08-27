@@ -100,30 +100,32 @@ export class SignalSigmaScraper {
 
   private async enterRebalanceMode(page: Page): Promise<void> {
     console.log('  Step 1–2: Enter rebalance mode...');
+    let rebalanceClicks = 0;
 
-    for (let attempt = 1; attempt <= 6; attempt++) {
+    for (let attempt = 1; attempt <= 12; attempt++) {
       if (await this.isInAdjustmentStep(page)) {
         console.log('  Rebalance adjustment UI ready (Next visible)');
         return;
+      }
+
+      if (await this.isGateOpen(page)) {
+        await this.handleOpenGate(page);
+        continue;
       }
 
       const rebalanceBtn = page.getByRole('button', {
         name: /rebalance portfolio/i,
       });
-      if (await this.isVisible(rebalanceBtn, 2000)) {
-        console.log(`  Click Rebalance Portfolio (attempt ${attempt})...`);
+      if (await this.isVisible(rebalanceBtn, 1500) && rebalanceClicks < 3) {
+        rebalanceClicks += 1;
+        console.log(`  Click Rebalance Portfolio (attempt ${rebalanceClicks})...`);
         await rebalanceBtn.click({ timeout: 10000 });
         await page.waitForTimeout(1500);
+        await this.handleOpenGate(page);
+        continue;
       }
 
-      await this.handleOpenGate(page);
-
-      if (await this.isInAdjustmentStep(page)) {
-        console.log('  Rebalance adjustment UI ready (Next visible)');
-        return;
-      }
-
-      await page.waitForTimeout(1500);
+      await page.waitForTimeout(1000);
     }
 
     const labels = await this.visibleButtonLabels(page);
@@ -133,50 +135,108 @@ export class SignalSigmaScraper {
     );
   }
 
+  private visibleDialog(page: Page): Locator {
+    return page.getByRole('dialog').last();
+  }
+
+  private async isGateOpen(page: Page): Promise<boolean> {
+    if (await this.isVisible(this.visibleDialog(page), 400)) {
+      return true;
+    }
+    return this.isVisible(
+      page.getByRole('button', { name: /^continue$/i }),
+      400
+    );
+  }
+
   private async handleOpenGate(page: Page): Promise<void> {
-    const dialog = page.getByRole('dialog');
-
-    if (await this.isVisible(dialog, 2500)) {
-      const dialogText = ((await dialog.innerText().catch(() => '')) || '').toLowerCase();
-      console.log(`  Dialog open: ${dialogText.slice(0, 120).replace(/\s+/g, ' ')}...`);
-
-      // Open orders gate → Discard (clears old orders, then enters rebalance).
-      if (
-        dialogText.includes('open orders') ||
-        (await this.isVisible(dialog.getByRole('button', { name: /^include$/i }), 500))
-      ) {
-        console.log('  Open-orders dialog — discarding existing orders...');
-        await dialog.getByRole('button', { name: /^discard$/i }).click({ timeout: 15000 });
-        // resetPortfolioOrders + refetch can take a few seconds before Next appears.
-        await this.waitForAdjustmentOrTimeout(page, 20000);
+    for (let step = 0; step < 8; step++) {
+      if (await this.isInAdjustmentStep(page)) {
         return;
       }
 
-      // Sync links / cash holdings / generic continue.
-      const continueInDialog = dialog.getByRole('button', { name: /^continue$/i });
-      if (await this.isVisible(continueInDialog, 1000)) {
-        console.log('  Dialog Continue...');
-        await continueInDialog.click({ timeout: 10000 });
-        await page.waitForTimeout(2000);
+      const dialog = this.visibleDialog(page);
+      if (await this.isVisible(dialog, 2000)) {
+        const dialogText = (
+          (await dialog.innerText().catch(() => '')) || ''
+        ).toLowerCase();
+        console.log(
+          `  Dialog open: ${dialogText.slice(0, 160).replace(/\s+/g, ' ')}...`
+        );
+
+        if (
+          dialogText.includes('open orders') ||
+          (await this.isVisible(
+            dialog.getByRole('button', { name: /^include$/i }),
+            500
+          ))
+        ) {
+          console.log('  Open-orders dialog — discarding existing orders...');
+          await this.clickDialogButton(
+            page,
+            dialog.getByRole('button', { name: /^discard$/i }),
+            'Discard'
+          );
+          await this.waitForAdjustmentOrTimeout(page, 20000);
+          continue;
+        }
+
+        const continueInDialog = dialog.getByRole('button', {
+          name: /^continue$/i,
+        });
+        if (await this.isVisible(continueInDialog, 1000)) {
+          await this.clickDialogButton(page, continueInDialog, 'Continue');
+          continue;
+        }
+
+        const discardInDialog = dialog.getByRole('button', {
+          name: /^discard$/i,
+        });
+        if (await this.isVisible(discardInDialog, 1000)) {
+          await this.clickDialogButton(page, discardInDialog, 'Discard');
+          await this.waitForAdjustmentOrTimeout(page, 15000);
+          continue;
+        }
+
+        console.warn('  Unrecognized gate dialog; leaving it open');
         return;
       }
 
-      const discardInDialog = dialog.getByRole('button', { name: /^discard$/i });
-      if (await this.isVisible(discardInDialog, 1000)) {
-        console.log('  Dialog Discard...');
-        await discardInDialog.click({ timeout: 10000 });
-        await this.waitForAdjustmentOrTimeout(page, 15000);
-        return;
+      const continueBtn = page.getByRole('button', { name: /^continue$/i });
+      if (await this.isVisible(continueBtn, 800)) {
+        console.log('  Continue...');
+        await this.clickDialogButton(page, continueBtn, 'Continue');
+        continue;
       }
+
+      return;
+    }
+  }
+
+  private async clickDialogButton(
+    page: Page,
+    button: Locator,
+    label: string
+  ): Promise<void> {
+    console.log(`  Dialog ${label}...`);
+    const dialog = this.visibleDialog(page);
+    await button.scrollIntoViewIfNeeded().catch(() => undefined);
+    try {
+      await button.click({ timeout: 10000 });
+    } catch {
+      await button.click({ force: true, timeout: 10000 });
     }
 
-    // Non-dialog Continue (cash holdings modal sometimes lacks dialog role).
-    const continueBtn = page.getByRole('button', { name: /^continue$/i });
-    if (await this.isVisible(continueBtn, 1000)) {
-      console.log('  Continue...');
-      await continueBtn.click({ timeout: 10000 });
-      await page.waitForTimeout(2000);
+    const closed = await dialog
+      .waitFor({ state: 'hidden', timeout: 8000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!closed && (await this.isVisible(button, 500))) {
+      console.log(`  Dialog still open after ${label}; retrying with force click`);
+      await button.click({ force: true, timeout: 5000 }).catch(() => undefined);
+      await dialog.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => undefined);
     }
+    await page.waitForTimeout(1000);
   }
 
   private async waitForAdjustmentOrTimeout(
