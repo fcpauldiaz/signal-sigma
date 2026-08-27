@@ -33,6 +33,7 @@ export type OrderDecision =
 const DEFAULT_STRATEGY_IDS = [
   'f835ece6-e41a-4d8a-ac3f-c5468088149a', // Millennium Alpha
   '5e3f1ff3-5bdb-4bcf-8baf-e69652056e3d', // Momentum
+  'efd217dd-da21-48fd-8442-d5abe3664c08', // Vision
 ];
 
 export function getConfiguredStrategyIds(): string[] {
