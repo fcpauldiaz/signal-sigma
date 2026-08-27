@@ -42,7 +42,10 @@ import {
   registerPushToken,
   type DeskPushSendResult,
 } from './utils/deskNotify';
-import { requestClientIp } from './utils/requestClientIp';
+import {
+  formatClientOrigin,
+  requestClientOrigin,
+} from './utils/requestClientIp';
 
 const UI_PORT = parseInt(process.env.UI_PORT || '3000', 10);
 const UI_DIST = path.join(__dirname, '..', 'ui', 'dist');
@@ -848,9 +851,10 @@ export function startUiServer(): http.Server {
           typeof patch.live === 'boolean' &&
           previous.live !== execution.live
         ) {
+          const origin = await requestClientOrigin(req);
           push = await notifyLiveExecution({
             enabled: execution.live,
-            ip: requestClientIp(req),
+            from: formatClientOrigin(origin),
           });
         } else if (typeof patch.live === 'boolean') {
           console.log(

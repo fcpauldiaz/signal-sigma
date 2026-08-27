@@ -230,11 +230,11 @@ export async function notifyOrders(
 
 export async function notifyLiveExecution(input: {
   enabled: boolean;
-  ip: string;
+  from: string;
 }): Promise<DeskPushSendResult> {
   return sendDeskNotification({
     title: input.enabled ? 'Live execution on' : 'Live execution off',
-    body: `from ${input.ip}`,
+    body: `from ${input.from}`,
     href: '/(tabs)',
   });
 }
