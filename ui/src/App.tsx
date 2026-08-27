@@ -1047,6 +1047,7 @@ function PositionsPage({
               <thead>
                 <tr>
                   <th>Symbol</th>
+                  <th>Strategy</th>
                   <th>Qty</th>
                   <th>Avg cost</th>
                   <th>Last</th>
@@ -1060,6 +1061,7 @@ function PositionsPage({
                 {brokerPositions.map((p) => (
                   <tr key={p.symbol}>
                     <td>{p.symbol}</td>
+                    <td>{p.strategy || "—"}</td>
                     <td>{p.quantity}</td>
                     <td>{money(p.avgCost)}</td>
                     <td>{money(p.lastPrice)}</td>
@@ -1456,6 +1458,7 @@ function SchwabPage({
                   <thead>
                     <tr>
                       <th>Symbol</th>
+                      <th>Strategy</th>
                       <th>Qty</th>
                       <th>Avg cost</th>
                       <th>Last</th>
@@ -1468,6 +1471,7 @@ function SchwabPage({
                     {brokerPositions.map((p) => (
                       <tr key={p.symbol}>
                         <td>{p.symbol}</td>
+                        <td>{p.strategy || "—"}</td>
                         <td>{p.quantity}</td>
                         <td>{money(p.avgCost)}</td>
                         <td>{money(p.lastPrice)}</td>

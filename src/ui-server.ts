@@ -460,6 +460,10 @@ async function buildPositions(mode: TradingMode) {
   const signalTickers = portfolio?.tickers ?? [];
   const pendingOrders = openOrders.orders.filter((o) => o.status === 'PENDING');
   const ownershipBySymbol = buildOwnershipBySymbol(signalTickers, strategyBooks);
+  const strategyLabelBySymbol = buildStrategyLabelBySymbol(
+    signalTickers,
+    strategyBooks
+  );
 
   const quotes = await tradierApi.getQuotes(
     brokerPositions.map((p) => p.symbol)
@@ -490,6 +494,8 @@ async function buildPositions(mode: TradingMode) {
       marketValue,
       openPl,
       openPlPercent,
+      strategy:
+        strategyLabelBySymbol.get(position.symbol.toUpperCase()) || null,
     };
   });
 
@@ -588,7 +594,10 @@ async function buildSchwabPositions() {
     refreshExpiresAt: status.refreshExpiresAt,
     accountId: snapshot.accountId,
     balances: snapshot.balances,
-    brokerPositions: snapshot.positions,
+    brokerPositions: snapshot.positions.map((position) => ({
+      ...position,
+      strategy: null,
+    })),
   };
 }
 

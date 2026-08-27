@@ -113,6 +113,7 @@ export interface PositionsResponse {
     marketValue: number | null;
     openPl: number | null;
     openPlPercent: number | null;
+    strategy: string | null;
   }>;
   signalPositions: Array<{
     symbol: string;
