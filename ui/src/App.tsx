@@ -147,6 +147,21 @@ function plClass(n: number | null | undefined): "" | "pos" | "neg" {
   return n > 0 ? "pos" : "neg";
 }
 
+function ownershipPlPercent(
+  ownershipPrice: number | null | undefined,
+  marketPrice: number | null | undefined
+): number | null {
+  if (
+    ownershipPrice == null ||
+    marketPrice == null ||
+    !(ownershipPrice > 0) ||
+    Number.isNaN(marketPrice)
+  ) {
+    return null;
+  }
+  return ((marketPrice - ownershipPrice) / ownershipPrice) * 100;
+}
+
 function isCashBookRow(row: {
   symbol: string;
   strategy: string | null;
@@ -1164,6 +1179,7 @@ function OrdersPage({
                 <th>Ownership</th>
                 <th>SS price</th>
                 <th>Market</th>
+                <th>P&L %</th>
                 <th>Value</th>
                 <th>Ready</th>
               </tr>
@@ -1171,36 +1187,50 @@ function OrdersPage({
             <tbody>
               {visible.length === 0 ? (
                 <tr>
-                  <td colSpan={9}>
+                  <td colSpan={10}>
                     {assetFilter === "all"
                       ? "No pending orders."
                       : `No pending ${assetFilter} orders.`}
                   </td>
                 </tr>
               ) : (
-                visible.map((o) => (
-                  <tr key={o.id}>
-                    <td className={o.direction === "BUY" ? "pos" : "neg"}>
-                      {o.direction}
-                    </td>
-                    <td>{o.symbol}</td>
-                    <td>{o.strategy || "—"}</td>
-                    <td>{o.quantity ?? Math.abs(o.amount)}</td>
-                    <td>{money(o.ownershipPrice)}</td>
-                    <td>{money(o.price)}</td>
-                    <td>{money(o.marketPrice)}</td>
-                    <td>{money(o.value)}</td>
-                    <td>
-                      {o.eligible ? (
-                        <span className="status connected">yes</span>
-                      ) : (
-                        <span className="status warn" title={o.skipReason || ""}>
-                          no
+                visible.map((o) => {
+                  const plPercent = ownershipPlPercent(
+                    o.ownershipPrice,
+                    o.marketPrice
+                  );
+                  return (
+                    <tr key={o.id}>
+                      <td className={o.direction === "BUY" ? "pos" : "neg"}>
+                        {o.direction}
+                      </td>
+                      <td>{o.symbol}</td>
+                      <td>{o.strategy || "—"}</td>
+                      <td>{o.quantity ?? Math.abs(o.amount)}</td>
+                      <td>{money(o.ownershipPrice)}</td>
+                      <td>{money(o.price)}</td>
+                      <td>{money(o.marketPrice)}</td>
+                      <td>
+                        <span className={`pl ${plClass(plPercent)}`.trim()}>
+                          {plPercent == null ? "—" : `${plPercent.toFixed(1)}%`}
                         </span>
-                      )}
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                      <td>{money(o.value)}</td>
+                      <td>
+                        {o.eligible ? (
+                          <span className="status connected">yes</span>
+                        ) : (
+                          <span
+                            className="status warn"
+                            title={o.skipReason || ""}
+                          >
+                            no
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
         </table>
