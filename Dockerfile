@@ -45,7 +45,7 @@ RUN apt-get update && apt-get install -y \
 COPY package.json package-lock.json* pnpm-lock.yaml* ./
 COPY ui/package.json ui/pnpm-lock.yaml* ./ui/
 
-RUN npm install -g pnpm \
+RUN npm install -g pnpm@10.26.1 \
   && pnpm install \
   && cd ui && pnpm install && cd ..
 
