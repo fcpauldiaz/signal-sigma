@@ -30,6 +30,9 @@ export type OrderDecision =
       quantity: number;
     };
 
+/** BUY allowed when market ≤ ownership × (1 + this). */
+export const BUY_OWNERSHIP_THRESHOLD = 0.01;
+
 const DEFAULT_STRATEGY_IDS = [
   'f835ece6-e41a-4d8a-ac3f-c5468088149a', // Millennium Alpha
   '5e3f1ff3-5bdb-4bcf-8baf-e69652056e3d', // Momentum
@@ -271,10 +274,12 @@ export function evaluateOpenOrder(
     };
   }
 
-  if (marketPrice > position.ownershipPrice) {
+  const maxBuyPrice =
+    position.ownershipPrice * (1 + BUY_OWNERSHIP_THRESHOLD);
+  if (marketPrice > maxBuyPrice) {
     return {
       place: false,
-      reason: `market ${marketPrice} > ownership ${position.ownershipPrice} (${position.strategy})`,
+      reason: `market ${marketPrice} > ownership ${position.ownershipPrice} + ${(BUY_OWNERSHIP_THRESHOLD * 100).toFixed(0)}% (${position.strategy})`,
       ownershipPrice: position.ownershipPrice,
       strategy: position.strategy,
       marketPrice,

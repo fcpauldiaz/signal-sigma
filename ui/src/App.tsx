@@ -1156,8 +1156,8 @@ function OrdersPage({
         <p className="workbench-kicker">Open orders</p>
         <h1>Orders</h1>
         <p>
-          Pending Signal Sigma instructions — BUY only when market ≤ strategy
-          ownership price (Millennium Alpha / Momentum).
+          Pending Signal Sigma instructions — BUY when market ≤ strategy
+          ownership price + 1% (Millennium Alpha / Momentum / Vision).
         </p>
       </header>
 
