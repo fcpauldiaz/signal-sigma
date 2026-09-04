@@ -395,6 +395,12 @@ async function buildOrders(mode: TradingMode) {
         quotesMessage = error instanceof Error ? error.message : String(error);
       }
 
+      const stopLossBySymbol = new Map(
+        portfolio.tickers
+          .filter((t) => t.stopLoss > 0)
+          .map((t) => [t.symbol.toUpperCase(), t.stopLoss] as const)
+      );
+
       const enriched = pending.map((order) => {
         const autoDecision = evaluateOpenOrder(
           order,
@@ -414,6 +420,7 @@ async function buildOrders(mode: TradingMode) {
           strategy: decision.strategy,
           ownershipPrice: decision.ownershipPrice,
           marketPrice: decision.marketPrice,
+          stopLoss: stopLossBySymbol.get(order.symbol.toUpperCase()) ?? null,
           eligible: decision.place,
           readyOverride,
           autoEligible: autoDecision.place,
@@ -489,6 +496,12 @@ async function buildPositions(mode: TradingMode) {
     brokerPositions.map((p) => p.symbol)
   );
 
+  const stopLossBySymbol = new Map(
+    signalTickers
+      .filter((t) => t.stopLoss > 0)
+      .map((t) => [t.symbol.toUpperCase(), t.stopLoss] as const)
+  );
+
   const enrichedBrokerPositions = brokerPositions.map((position) => {
     const lastPrice = resolveQuotePrice(quotes.get(position.symbol));
     const contractSize = isOptionSymbol(position.symbol)
@@ -516,6 +529,7 @@ async function buildPositions(mode: TradingMode) {
       openPlPercent,
       strategy:
         strategyLabelBySymbol.get(position.symbol.toUpperCase()) || null,
+      stopLoss: stopLossBySymbol.get(position.symbol.toUpperCase()) ?? null,
     };
   });
 
@@ -535,6 +549,7 @@ async function buildPositions(mode: TradingMode) {
           targetAmount: t.targetAmount,
           lastPrice: t.lastPrice,
           ownershipPrice: ownership?.ownershipPrice ?? t.ownershipPrice,
+          stopLoss: t.stopLoss > 0 ? t.stopLoss : null,
           strategy: ownership?.strategy || t.customGroup || null,
           systemClassification: t.systemClassification,
           value: t.value,

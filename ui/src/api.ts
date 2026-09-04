@@ -78,6 +78,7 @@ export interface OpenOrderRow {
   strategy: string | null;
   ownershipPrice: number | null;
   marketPrice: number | null;
+  stopLoss?: number | null;
   eligible: boolean;
   readyOverride?: "auto" | "force" | "block";
   autoEligible?: boolean;
@@ -116,6 +117,7 @@ export interface PositionsResponse {
     openPl: number | null;
     openPlPercent: number | null;
     strategy: string | null;
+    stopLoss?: number | null;
   }>;
   signalPositions: Array<{
     symbol: string;
@@ -124,6 +126,7 @@ export interface PositionsResponse {
     targetAmount: number;
     lastPrice: number;
     ownershipPrice: number;
+    stopLoss?: number | null;
     strategy: string | null;
     systemClassification?: string | null;
     value: number;
