@@ -118,6 +118,24 @@ function ytdTotal(
   return (realizedYtd ?? 0) + (openPl ?? 0);
 }
 
+function sumBrokerPositionTotals(
+  positions: PositionsResponse["brokerPositions"]
+) {
+  let quantity = 0;
+  let marketValue = 0;
+  let openPl = 0;
+  let costBasis = 0;
+  for (const p of positions) {
+    quantity += p.quantity;
+    marketValue += p.marketValue ?? 0;
+    openPl += p.openPl ?? 0;
+    costBasis += p.costBasis ?? 0;
+  }
+  const openPlPercent =
+    costBasis !== 0 ? (openPl / Math.abs(costBasis)) * 100 : null;
+  return { quantity, marketValue, openPl, openPlPercent };
+}
+
 function ytdReturnPct(
   ytdPl: number,
   equity: number | null | undefined
@@ -994,10 +1012,11 @@ function PositionsPage({
     assetFilter === "all"
       ? data.signalPositions.filter((t) => isCashBookRow(t))
       : [];
+  const brokerTotals = sumBrokerPositionTotals(brokerPositions);
   const marketValue =
     assetFilter === "all"
       ? data.balances.marketValue
-      : brokerPositions.reduce((sum, p) => sum + (p.marketValue ?? 0), 0);
+      : brokerTotals.marketValue;
   const openPl = filteredOpenPl(
     assetFilter,
     data.balances.openPl,
@@ -1082,6 +1101,31 @@ function PositionsPage({
                   </tr>
                 ))}
               </tbody>
+              <tfoot>
+                <tr>
+                  <td>Total</td>
+                  <td />
+                  <td>{brokerTotals.quantity}</td>
+                  <td />
+                  <td />
+                  <td>{money(brokerTotals.marketValue)}</td>
+                  <td>
+                    <span className={`pl ${plClass(brokerTotals.openPl)}`.trim()}>
+                      {money(brokerTotals.openPl)}
+                    </span>
+                  </td>
+                  <td>
+                    <span
+                      className={`pl ${plClass(brokerTotals.openPlPercent)}`.trim()}
+                    >
+                      {brokerTotals.openPlPercent == null
+                        ? "—"
+                        : `${brokerTotals.openPlPercent.toFixed(1)}%`}
+                    </span>
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
@@ -1150,6 +1194,13 @@ function OrdersPage({
   assetFilter: AssetFilter;
 }) {
   const visible = orders.filter((o) => matchesAssetFilter(o.symbol, assetFilter));
+  const eligibleCount = visible.filter((o) => o.eligible).length;
+  let totalQty = 0;
+  let totalValue = 0;
+  for (const o of visible) {
+    totalQty += o.quantity ?? Math.abs(o.amount);
+    totalValue += o.value || 0;
+  }
   return (
     <>
       <header className="workbench-header">
@@ -1165,8 +1216,7 @@ function OrdersPage({
         <StatusDot ok={quotesOk} label={quotesOk ? "Quotes ok" : "Quotes down"} />
         {!quotesOk && <span className="error-msg">{quotesMessage}</span>}
         <span>
-          {visible.filter((o) => o.eligible).length} eligible / {visible.length}{" "}
-          pending
+          {eligibleCount} eligible / {visible.length} pending
         </span>
       </div>
 
@@ -1235,6 +1285,24 @@ function OrdersPage({
                 })
               )}
             </tbody>
+            {visible.length > 0 && (
+              <tfoot>
+                <tr>
+                  <td>Total</td>
+                  <td />
+                  <td />
+                  <td>{totalQty}</td>
+                  <td />
+                  <td />
+                  <td />
+                  <td />
+                  <td>{money(totalValue)}</td>
+                  <td>
+                    {eligibleCount}/{visible.length}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
         </table>
       </div>
     </>
@@ -1341,6 +1409,7 @@ function SchwabPage({
   const brokerPositions = (positions?.brokerPositions ?? []).filter((p) =>
     matchesAssetFilter(p.symbol, assetFilter)
   );
+  const brokerTotals = sumBrokerPositionTotals(brokerPositions);
   const openPl = filteredOpenPl(
     assetFilter,
     positions?.balances.openPl,
@@ -1493,6 +1562,32 @@ function SchwabPage({
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot>
+                    <tr>
+                      <td>Total</td>
+                      <td />
+                      <td>{brokerTotals.quantity}</td>
+                      <td />
+                      <td />
+                      <td>{money(brokerTotals.marketValue)}</td>
+                      <td>
+                        <span
+                          className={`pl ${plClass(brokerTotals.openPl)}`.trim()}
+                        >
+                          {money(brokerTotals.openPl)}
+                        </span>
+                      </td>
+                      <td>
+                        <span
+                          className={`pl ${plClass(brokerTotals.openPlPercent)}`.trim()}
+                        >
+                          {brokerTotals.openPlPercent == null
+                            ? "—"
+                            : `${brokerTotals.openPlPercent.toFixed(1)}%`}
+                        </span>
+                      </td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             )}
