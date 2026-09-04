@@ -136,6 +136,30 @@ function sumBrokerPositionTotals(
   return { quantity, marketValue, openPl, openPlPercent };
 }
 
+function portfolioWeightPercent(
+  marketValue: number | null | undefined,
+  portfolioValue: number | null | undefined
+): number | null {
+  if (
+    marketValue == null ||
+    portfolioValue == null ||
+    portfolioValue === 0 ||
+    Number.isNaN(marketValue) ||
+    Number.isNaN(portfolioValue)
+  ) {
+    return null;
+  }
+  return (marketValue / Math.abs(portfolioValue)) * 100;
+}
+
+function formatWeightPercent(
+  marketValue: number | null | undefined,
+  portfolioValue: number | null | undefined
+): string {
+  const weight = portfolioWeightPercent(marketValue, portfolioValue);
+  return weight == null ? "—" : `${weight.toFixed(1)}%`;
+}
+
 function ytdReturnPct(
   ytdPl: number,
   equity: number | null | undefined
@@ -1013,6 +1037,7 @@ function PositionsPage({
       ? data.signalPositions.filter((t) => isCashBookRow(t))
       : [];
   const brokerTotals = sumBrokerPositionTotals(brokerPositions);
+  const portfolioEquity = data.balances.totalEquity;
   const marketValue =
     assetFilter === "all"
       ? data.balances.marketValue
@@ -1071,6 +1096,7 @@ function PositionsPage({
                   <th>Avg cost</th>
                   <th>Last</th>
                   <th>Mkt value</th>
+                  <th>Weight</th>
                   <th>Open P&L</th>
                   <th>P&L %</th>
                   <th>Acquired</th>
@@ -1085,6 +1111,9 @@ function PositionsPage({
                     <td>{money(p.avgCost)}</td>
                     <td>{money(p.lastPrice)}</td>
                     <td>{money(p.marketValue)}</td>
+                    <td>
+                      {formatWeightPercent(p.marketValue, portfolioEquity)}
+                    </td>
                     <td>
                       <span className={`pl ${plClass(p.openPl)}`.trim()}>
                         {money(p.openPl)}
@@ -1109,6 +1138,12 @@ function PositionsPage({
                   <td />
                   <td />
                   <td>{money(brokerTotals.marketValue)}</td>
+                  <td>
+                    {formatWeightPercent(
+                      brokerTotals.marketValue,
+                      portfolioEquity
+                    )}
+                  </td>
                   <td>
                     <span className={`pl ${plClass(brokerTotals.openPl)}`.trim()}>
                       {money(brokerTotals.openPl)}
@@ -1425,6 +1460,7 @@ function SchwabPage({
     matchesAssetFilter(p.symbol, assetFilter)
   );
   const brokerTotals = sumBrokerPositionTotals(brokerPositions);
+  const portfolioEquity = positions?.balances.totalEquity ?? null;
   const openPl = filteredOpenPl(
     assetFilter,
     positions?.balances.openPl,
@@ -1547,6 +1583,7 @@ function SchwabPage({
                       <th>Avg cost</th>
                       <th>Last</th>
                       <th>Mkt value</th>
+                      <th>Weight</th>
                       <th>Open P&L</th>
                       <th>P&L %</th>
                     </tr>
@@ -1560,6 +1597,9 @@ function SchwabPage({
                         <td>{money(p.avgCost)}</td>
                         <td>{money(p.lastPrice)}</td>
                         <td>{money(p.marketValue)}</td>
+                        <td>
+                          {formatWeightPercent(p.marketValue, portfolioEquity)}
+                        </td>
                         <td>
                           <span className={`pl ${plClass(p.openPl)}`.trim()}>
                             {money(p.openPl)}
@@ -1585,6 +1625,12 @@ function SchwabPage({
                       <td />
                       <td />
                       <td>{money(brokerTotals.marketValue)}</td>
+                      <td>
+                        {formatWeightPercent(
+                          brokerTotals.marketValue,
+                          portfolioEquity
+                        )}
+                      </td>
                       <td>
                         <span
                           className={`pl ${plClass(brokerTotals.openPl)}`.trim()}
