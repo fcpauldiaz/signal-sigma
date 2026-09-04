@@ -31,7 +31,7 @@ export type OrderDecision =
     };
 
 /** BUY allowed when market ≤ ownership × (1 + this). */
-export const BUY_OWNERSHIP_THRESHOLD = 0.01;
+export const BUY_OWNERSHIP_THRESHOLD = 0.02;
 
 const DEFAULT_STRATEGY_IDS = [
   'f835ece6-e41a-4d8a-ac3f-c5468088149a', // Millennium Alpha

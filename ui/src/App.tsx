@@ -1197,10 +1197,19 @@ function OrdersPage({
   const eligibleCount = visible.filter((o) => o.eligible).length;
   let totalQty = 0;
   let totalValue = 0;
+  let plWeight = 0;
+  let plWeightedSum = 0;
   for (const o of visible) {
     totalQty += o.quantity ?? Math.abs(o.amount);
-    totalValue += o.value || 0;
+    const orderValue = o.value || 0;
+    totalValue += orderValue;
+    const plPercent = ownershipPlPercent(o.ownershipPrice, o.marketPrice);
+    if (plPercent != null && orderValue !== 0) {
+      plWeightedSum += plPercent * Math.abs(orderValue);
+      plWeight += Math.abs(orderValue);
+    }
   }
+  const totalPlPercent = plWeight > 0 ? plWeightedSum / plWeight : null;
   return (
     <>
       <header className="workbench-header">
@@ -1208,7 +1217,7 @@ function OrdersPage({
         <h1>Orders</h1>
         <p>
           Pending Signal Sigma instructions — BUY when market ≤ strategy
-          ownership price + 1% (Millennium Alpha / Momentum / Vision).
+          ownership price + 2% (Millennium Alpha / Momentum / Vision).
         </p>
       </header>
 
@@ -1295,7 +1304,13 @@ function OrdersPage({
                   <td />
                   <td />
                   <td />
-                  <td />
+                  <td>
+                    <span className={`pl ${plClass(totalPlPercent)}`.trim()}>
+                      {totalPlPercent == null
+                        ? "—"
+                        : `${totalPlPercent.toFixed(1)}%`}
+                    </span>
+                  </td>
                   <td>{money(totalValue)}</td>
                   <td>
                     {eligibleCount}/{visible.length}
