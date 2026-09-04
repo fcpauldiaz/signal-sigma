@@ -1,4 +1,3 @@
-import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as http from 'http';
 import * as path from 'path';
@@ -52,6 +51,15 @@ import {
   formatClientOrigin,
   requestClientOrigin,
 } from './utils/requestClientIp';
+import {
+  buildClearSessionCookie,
+  buildSessionCookie,
+  createSession,
+  destroySession,
+  getSessionIdFromRequest,
+  isValidSession,
+  requestIsHttps,
+} from './utils/adminSessions';
 
 const UI_PORT = parseInt(process.env.UI_PORT || '3000', 10);
 const UI_DIST = path.join(__dirname, '..', 'ui', 'dist');
@@ -65,7 +73,6 @@ const deskResponseCache = new TtlCache();
 function isOptionSymbol(symbol: string): boolean {
   return OCC_OPTION.test(symbol.trim());
 }
-const activeSessions = new Set<string>();
 
 type JobKind = 'rebalance' | 'place-orders' | 'rebalance-and-place';
 
@@ -98,10 +105,16 @@ const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
-function sendJson(res: http.ServerResponse, status: number, data: unknown): void {
+function sendJson(
+  res: http.ServerResponse,
+  status: number,
+  data: unknown,
+  extraHeaders?: http.OutgoingHttpHeaders
+): void {
   res.writeHead(status, {
     'Content-Type': 'application/json',
     ...CORS_HEADERS,
+    ...extraHeaders,
   });
   res.end(JSON.stringify(data));
 }
@@ -131,18 +144,9 @@ function parseBody(req: http.IncomingMessage): Promise<Record<string, unknown>> 
   });
 }
 
-function extractBearerToken(req: http.IncomingMessage): string | null {
-  const authHeader = req.headers.authorization;
-  if (authHeader?.startsWith('Bearer ')) {
-    return authHeader.slice(7).trim();
-  }
-  return null;
-}
-
 function isAuthenticated(req: http.IncomingMessage): boolean {
   if (!ADMIN_PASSWORD) return true;
-  const token = extractBearerToken(req);
-  return token != null && activeSessions.has(token);
+  return isValidSession(getSessionIdFromRequest(req));
 }
 
 function requireAuth(req: http.IncomingMessage, res: http.ServerResponse): boolean {
@@ -798,16 +802,22 @@ export function startUiServer(): http.Server {
           sendJson(res, 401, { error: 'Invalid password' });
           return;
         }
-        const token = crypto.randomBytes(32).toString('hex');
-        activeSessions.add(token);
-        sendJson(res, 200, { token });
+        const session = createSession();
+        sendJson(res, 200, { ok: true }, {
+          'Set-Cookie': buildSessionCookie(
+            session.id,
+            session.maxAgeSec,
+            requestIsHttps(req)
+          ),
+        });
         return;
       }
 
       if (pathname === '/api/logout' && req.method === 'POST') {
-        const token = extractBearerToken(req);
-        if (token) activeSessions.delete(token);
-        sendJson(res, 200, { ok: true });
+        destroySession(getSessionIdFromRequest(req));
+        sendJson(res, 200, { ok: true }, {
+          'Set-Cookie': buildClearSessionCookie(requestIsHttps(req)),
+        });
         return;
       }
 
@@ -844,11 +854,8 @@ export function startUiServer(): http.Server {
         return;
       }
 
-      if (pathname.startsWith('/api/') && !requireAuth(req, res)) {
-        return;
-      }
-
       if (pathname === '/api/push-token' && req.method === 'POST') {
+        if (!requireAuth(req, res)) return;
         const body = await parseBody(req);
         const token = String(body.token || '');
         if (!isExpoPushToken(token)) {
@@ -866,6 +873,7 @@ export function startUiServer(): http.Server {
       }
 
       if (pathname === '/api/execution' && req.method === 'POST') {
+        if (!requireAuth(req, res)) return;
         const body = await parseBody(req);
         const patch: { paper?: boolean; live?: boolean } = {};
         if (typeof body.paper === 'boolean') patch.paper = body.paper;
@@ -911,6 +919,7 @@ export function startUiServer(): http.Server {
       }
 
       if (pathname === '/api/orders/ready' && req.method === 'POST') {
+        if (!requireAuth(req, res)) return;
         const body = await parseBody(req);
         const mode = resolveRequestMode(req, url, body);
         const orderId = String(body.orderId || '').trim();
@@ -950,6 +959,7 @@ export function startUiServer(): http.Server {
       }
 
       if (pathname === '/api/schwab/auth/url' && req.method === 'GET') {
+        if (!requireAuth(req, res)) return;
         const auth = SchwabAuth.fromEnv();
         if (!auth.isConfigured()) {
           sendJson(res, 400, {
@@ -982,6 +992,7 @@ export function startUiServer(): http.Server {
       }
 
       if (pathname === '/api/rebalance' && req.method === 'POST') {
+        if (!requireAuth(req, res)) return;
         const body = await parseBody(req);
         const mode = resolveRequestMode(req, url, body);
         const job = await runJob('rebalance', mode);
@@ -990,6 +1001,7 @@ export function startUiServer(): http.Server {
       }
 
       if (pathname === '/api/place-orders' && req.method === 'POST') {
+        if (!requireAuth(req, res)) return;
         const body = await parseBody(req);
         const mode = resolveRequestMode(req, url, body);
         const job = await runJob('place-orders', mode);
@@ -998,6 +1010,7 @@ export function startUiServer(): http.Server {
       }
 
       if (pathname === '/api/rebalance-and-place' && req.method === 'POST') {
+        if (!requireAuth(req, res)) return;
         const body = await parseBody(req);
         const mode = resolveRequestMode(req, url, body);
         const job = await runJob('rebalance-and-place', mode);

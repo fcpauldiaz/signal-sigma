@@ -127,6 +127,7 @@ The iOS desk lives in a separate repo: [fcpauldiaz/signal-sigma-mobile](https://
 - `REBALANCE_SCHEDULE`: Cron expression for rebalancing (default: `0 14 * * *` for 9 AM EST daily)
 - `ORDER_SCHEDULE`: Cron expression for order placement (default: `0 15 * * *` for 10 AM EST daily)
 - `ENABLE_SCHEDULER`: Set to `true` to enable automated scheduler
+- `ADMIN_PASSWORD`: Desk password for rebalance, place orders, Ready overrides, and execution toggles. Leave empty to disable auth. Sessions are HttpOnly cookies persisted in `data/admin-sessions.json` for 90 days — mount/persist `data/` across Coolify redeploys so you stay logged in.
 
 ## Rebalancing Feature
 

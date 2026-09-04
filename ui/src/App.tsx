@@ -9,14 +9,12 @@ import {
   fetchSchwabPerformance,
   fetchSchwabPositions,
   fetchStatus,
-  getAuthToken,
   getTradingMode,
   login,
   logout,
   runPlaceOrders,
   runRebalance,
   runRebalanceAndPlace,
-  setAuthToken,
   setOrderReady,
   setTradingMode,
   updateExecution,
@@ -439,8 +437,7 @@ function LoginModal({
   const [password, setPassword] = useState("");
   const mut = useMutation({
     mutationFn: () => login(password),
-    onSuccess: (data) => {
-      setAuthToken(data.token);
+    onSuccess: () => {
       onLoggedIn();
       onClose();
     },
@@ -453,7 +450,7 @@ function LoginModal({
       labelledBy="login-title"
       onClose={onClose}
     >
-      <p>Password required for trading actions.</p>
+      <p>Password required for trading actions. Session lasts 90 days.</p>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -1223,11 +1220,18 @@ function OrdersPage({
   quotesOk,
   quotesMessage,
   assetFilter,
+  authRequired,
+  onAuthRequired,
 }: {
   orders: OpenOrderRow[];
   quotesOk: boolean;
   quotesMessage: string;
   assetFilter: AssetFilter;
+  authRequired: boolean;
+  onAuthRequired: (pending: {
+    orderId: string;
+    ready: "auto" | "force" | "block";
+  }) => void;
 }) {
   const qc = useQueryClient();
   const readyMut = useMutation({
@@ -1259,6 +1263,18 @@ function OrdersPage({
     }
   }
   const totalPlPercent = plWeight > 0 ? plWeightedSum / plWeight : null;
+
+  const requestReadyChange = (
+    orderId: string,
+    ready: "auto" | "force" | "block"
+  ) => {
+    if (authRequired) {
+      onAuthRequired({ orderId, ready });
+      return;
+    }
+    readyMut.mutate({ orderId, ready });
+  };
+
   return (
     <>
       <header className="workbench-header">
@@ -1267,7 +1283,7 @@ function OrdersPage({
         <p>
           Pending Signal Sigma instructions — BUY when market ≤ strategy
           ownership price + 2% (Millennium Alpha / Momentum / Vision). Ready can
-          be forced for this server session.
+          be forced for this server process.
         </p>
       </header>
 
@@ -1354,7 +1370,7 @@ function OrdersPage({
                               | "auto"
                               | "force"
                               | "block";
-                            readyMut.mutate({ orderId: o.id, ready });
+                            requestReadyChange(o.id, ready);
                           }}
                         >
                           <option value="auto">
@@ -1728,12 +1744,19 @@ export default function App() {
   const qc = useQueryClient();
   const [loginOpen, setLoginOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<DeskAction | null>(null);
+  const [pendingReady, setPendingReady] = useState<{
+    orderId: string;
+    ready: "auto" | "force" | "block";
+  } | null>(null);
   const [pushWarning, setPushWarning] = useState<string | null>(null);
-  const [token, setToken] = useState<string | null>(() => getAuthToken());
   const [mode, setMode] = useState<TradingMode>(() => getTradingMode());
   const [assetFilter, setAssetFilter] = useState<AssetFilter>(() =>
     parseAssetFilter(localStorage.getItem(ASSET_FILTER_KEY))
   );
+
+  useEffect(() => {
+    localStorage.removeItem("signal_sigma_token");
+  }, []);
 
   const switchAssetFilter = (next: AssetFilter) => {
     setAssetFilter(next);
@@ -1747,9 +1770,23 @@ export default function App() {
   };
 
   const authQ = useQuery({
-    queryKey: ["auth", token],
-    queryFn: () => fetchAuthStatus(token),
+    queryKey: ["auth"],
+    queryFn: fetchAuthStatus,
     refetchInterval: 60_000,
+  });
+
+  const readyAfterLoginMut = useMutation({
+    mutationFn: ({
+      orderId,
+      ready,
+    }: {
+      orderId: string;
+      ready: "auto" | "force" | "block";
+    }) => setOrderReady(orderId, ready),
+    onSuccess: () => {
+      setPendingReady(null);
+      void qc.invalidateQueries({ queryKey: ["orders"] });
+    },
   });
 
   const statusQ = useQuery({
@@ -1927,9 +1964,8 @@ export default function App() {
                 type="button"
                 className="nav-auth-btn"
                 onClick={async () => {
-                  if (token) await logout(token);
-                  setAuthToken(null);
-                  setToken(null);
+                  await logout();
+                  setPendingReady(null);
                   void qc.invalidateQueries({ queryKey: ["auth"] });
                 }}
               >
@@ -2082,6 +2118,11 @@ export default function App() {
               quotesOk={ordersQ.data.quotesOk}
               quotesMessage={ordersQ.data.quotesMessage}
               assetFilter={assetFilter}
+              authRequired={Boolean(authRequired)}
+              onAuthRequired={(pending) => {
+                setPendingReady(pending);
+                setLoginOpen(true);
+              }}
             />
           )}
         </>
@@ -2145,10 +2186,15 @@ export default function App() {
 
       <LoginModal
         open={loginOpen}
-        onClose={() => setLoginOpen(false)}
+        onClose={() => {
+          setLoginOpen(false);
+          setPendingReady(null);
+        }}
         onLoggedIn={() => {
-          setToken(getAuthToken());
           void qc.invalidateQueries({ queryKey: ["auth"] });
+          if (pendingReady) {
+            readyAfterLoginMut.mutate(pendingReady);
+          }
         }}
       />
       <ConfirmModal

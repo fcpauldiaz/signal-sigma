@@ -195,21 +195,10 @@ export interface SchwabPerformanceResponse extends SchwabConnection {
   recentClosed: PerformanceResponse["recentClosed"];
 }
 
-let _authToken: string | null = localStorage.getItem("signal_sigma_token");
 let _tradingMode: TradingMode =
   (localStorage.getItem("signal_sigma_mode") as TradingMode | null) === "live"
     ? "live"
     : "paper";
-
-export function getAuthToken(): string | null {
-  return _authToken;
-}
-
-export function setAuthToken(token: string | null): void {
-  _authToken = token;
-  if (token) localStorage.setItem("signal_sigma_token", token);
-  else localStorage.removeItem("signal_sigma_token");
-}
 
 export function getTradingMode(): TradingMode {
   return _tradingMode;
@@ -220,12 +209,8 @@ export function setTradingMode(mode: TradingMode): void {
   localStorage.setItem("signal_sigma_mode", mode);
 }
 
-function authHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {
-    "X-Trading-Mode": _tradingMode,
-  };
-  if (_authToken) headers.Authorization = `Bearer ${_authToken}`;
-  return headers;
+function modeHeaders(): Record<string, string> {
+  return { "X-Trading-Mode": _tradingMode };
 }
 
 function withMode(path: string): string {
@@ -239,17 +224,18 @@ async function parseError(r: Response): Promise<string> {
   return data.error || r.statusText;
 }
 
-export async function fetchAuthStatus(token: string | null): Promise<AuthStatus> {
-  const headers: Record<string, string> = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
-  const r = await fetch("/api/auth/status", { headers });
+const cookieFetch: RequestInit = { credentials: "include" };
+
+export async function fetchAuthStatus(): Promise<AuthStatus> {
+  const r = await fetch("/api/auth/status", cookieFetch);
   if (!r.ok) throw new Error(r.statusText);
   return r.json();
 }
 
-export async function login(password: string): Promise<{ token: string }> {
+export async function login(password: string): Promise<{ ok: boolean }> {
   const r = await fetch("/api/login", {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password }),
   });
@@ -257,21 +243,27 @@ export async function login(password: string): Promise<{ token: string }> {
   return r.json();
 }
 
-export async function logout(token: string): Promise<void> {
+export async function logout(): Promise<void> {
   await fetch("/api/logout", {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
+    credentials: "include",
   });
 }
 
 export async function fetchStatus(): Promise<StatusResponse> {
-  const r = await fetch(withMode("/api/status"), { headers: authHeaders() });
+  const r = await fetch(withMode("/api/status"), {
+    ...cookieFetch,
+    headers: modeHeaders(),
+  });
   if (!r.ok) throw new Error(await parseError(r));
   return r.json();
 }
 
 export async function fetchOrders(): Promise<OrdersResponse> {
-  const r = await fetch(withMode("/api/orders"), { headers: authHeaders() });
+  const r = await fetch(withMode("/api/orders"), {
+    ...cookieFetch,
+    headers: modeHeaders(),
+  });
   if (!r.ok) throw new Error(await parseError(r));
   return r.json();
 }
@@ -282,7 +274,8 @@ export async function setOrderReady(
 ): Promise<{ orderId: string; mode: TradingMode; readyOverride: string }> {
   const r = await fetch(withMode("/api/orders/ready"), {
     method: "POST",
-    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    credentials: "include",
+    headers: { ...modeHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify({ orderId, ready, mode: _tradingMode }),
   });
   if (!r.ok) throw new Error(await parseError(r));
@@ -290,13 +283,19 @@ export async function setOrderReady(
 }
 
 export async function fetchPositions(): Promise<PositionsResponse> {
-  const r = await fetch(withMode("/api/positions"), { headers: authHeaders() });
+  const r = await fetch(withMode("/api/positions"), {
+    ...cookieFetch,
+    headers: modeHeaders(),
+  });
   if (!r.ok) throw new Error(await parseError(r));
   return r.json();
 }
 
 export async function fetchPerformance(): Promise<PerformanceResponse> {
-  const r = await fetch(withMode("/api/performance"), { headers: authHeaders() });
+  const r = await fetch(withMode("/api/performance"), {
+    ...cookieFetch,
+    headers: modeHeaders(),
+  });
   if (!r.ok) throw new Error(await parseError(r));
   return r.json();
 }
@@ -305,19 +304,28 @@ export async function fetchSchwabAuthUrl(): Promise<{
   url: string;
   callbackUrl: string | null;
 }> {
-  const r = await fetch("/api/schwab/auth/url", { headers: authHeaders() });
+  const r = await fetch("/api/schwab/auth/url", {
+    ...cookieFetch,
+    headers: modeHeaders(),
+  });
   if (!r.ok) throw new Error(await parseError(r));
   return r.json();
 }
 
 export async function fetchSchwabPositions(): Promise<SchwabPositionsResponse> {
-  const r = await fetch("/api/schwab/positions", { headers: authHeaders() });
+  const r = await fetch("/api/schwab/positions", {
+    ...cookieFetch,
+    headers: modeHeaders(),
+  });
   if (!r.ok) throw new Error(await parseError(r));
   return r.json();
 }
 
 export async function fetchSchwabPerformance(): Promise<SchwabPerformanceResponse> {
-  const r = await fetch("/api/schwab/performance", { headers: authHeaders() });
+  const r = await fetch("/api/schwab/performance", {
+    ...cookieFetch,
+    headers: modeHeaders(),
+  });
   if (!r.ok) throw new Error(await parseError(r));
   return r.json();
 }
@@ -325,7 +333,10 @@ export async function fetchSchwabPerformance(): Promise<SchwabPerformanceRespons
 export async function fetchExecution(): Promise<{
   execution: { paper: boolean; live: boolean };
 }> {
-  const r = await fetch("/api/execution", { headers: authHeaders() });
+  const r = await fetch("/api/execution", {
+    ...cookieFetch,
+    headers: modeHeaders(),
+  });
   if (!r.ok) throw new Error(await parseError(r));
   return r.json();
 }
@@ -339,7 +350,8 @@ export async function updateExecution(patch: {
 }> {
   const r = await fetch("/api/execution", {
     method: "POST",
-    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    credentials: "include",
+    headers: { ...modeHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify(patch),
   });
   if (!r.ok) throw new Error(await parseError(r));
@@ -349,7 +361,8 @@ export async function updateExecution(patch: {
 export async function runRebalance(): Promise<{ job: JobState }> {
   const r = await fetch(withMode("/api/rebalance"), {
     method: "POST",
-    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    credentials: "include",
+    headers: { ...modeHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify({ mode: _tradingMode }),
   });
   const data = await r.json();
@@ -360,7 +373,8 @@ export async function runRebalance(): Promise<{ job: JobState }> {
 export async function runPlaceOrders(): Promise<{ job: JobState }> {
   const r = await fetch(withMode("/api/place-orders"), {
     method: "POST",
-    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    credentials: "include",
+    headers: { ...modeHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify({ mode: _tradingMode }),
   });
   const data = await r.json();
@@ -371,7 +385,8 @@ export async function runPlaceOrders(): Promise<{ job: JobState }> {
 export async function runRebalanceAndPlace(): Promise<{ job: JobState }> {
   const r = await fetch(withMode("/api/rebalance-and-place"), {
     method: "POST",
-    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    credentials: "include",
+    headers: { ...modeHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify({ mode: _tradingMode }),
   });
   const data = await r.json();
