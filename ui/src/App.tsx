@@ -1010,9 +1010,9 @@ function signalPositionCells(t: PositionsResponse["signalPositions"][number]) {
       <td>{t.amount}</td>
       <td>{t.targetAmount}</td>
       <td>{money(t.ownershipPrice)}</td>
-      <td>{money(t.stopLoss)}</td>
       <td>{money(t.lastPrice)}</td>
       <td>{money(t.value)}</td>
+      <td>{money(t.stopLoss)}</td>
       <td>{t.percent?.toFixed?.(1) ?? t.percent}%</td>
     </>
   );
@@ -1095,8 +1095,8 @@ function PositionsPage({
                   <th>Avg cost</th>
                   <th>Last</th>
                   <th>Mkt value</th>
-                  <th>Weight</th>
                   <th>Stop</th>
+                  <th>Weight</th>
                   <th>Open P&L</th>
                   <th>P&L %</th>
                   <th>Acquired</th>
@@ -1111,10 +1111,10 @@ function PositionsPage({
                     <td>{money(p.avgCost)}</td>
                     <td>{money(p.lastPrice)}</td>
                     <td>{money(p.marketValue)}</td>
+                    <td>{money(p.stopLoss)}</td>
                     <td>
                       {formatWeightPercent(p.marketValue, portfolioEquity)}
                     </td>
-                    <td>{money(p.stopLoss)}</td>
                     <td>
                       <span className={`pl ${plClass(p.openPl)}`.trim()}>
                         {money(p.openPl)}
@@ -1139,13 +1139,13 @@ function PositionsPage({
                   <td />
                   <td />
                   <td>{money(brokerTotals.marketValue)}</td>
+                  <td />
                   <td>
                     {formatWeightPercent(
                       brokerTotals.marketValue,
                       portfolioEquity
                     )}
                   </td>
-                  <td />
                   <td>
                     <span className={`pl ${plClass(brokerTotals.openPl)}`.trim()}>
                       {money(brokerTotals.openPl)}
@@ -1185,9 +1185,9 @@ function PositionsPage({
                 <th>Shares</th>
                 <th>Target</th>
                 <th>Own $</th>
-                <th>Stop</th>
                 <th>Last</th>
                 <th>Value</th>
+                <th>Stop</th>
                 <th>%</th>
               </tr>
             </thead>
@@ -1314,9 +1314,8 @@ function OrdersPage({
                 <th>Strategy</th>
                 <th>Qty</th>
                 <th>Ownership</th>
-                <th>Stop</th>
-                <th>SS price</th>
                 <th>Market</th>
+                <th>Stop</th>
                 <th>P&L %</th>
                 <th>Value</th>
                 <th>Ready</th>
@@ -1325,7 +1324,7 @@ function OrdersPage({
             <tbody>
               {visible.length === 0 ? (
                 <tr>
-                  <td colSpan={11}>
+                  <td colSpan={10}>
                     {assetFilter === "all"
                       ? "No pending orders."
                       : `No pending ${assetFilter} orders.`}
@@ -1350,9 +1349,8 @@ function OrdersPage({
                       <td>{o.strategy || "—"}</td>
                       <td>{o.quantity ?? Math.abs(o.amount)}</td>
                       <td>{money(o.ownershipPrice)}</td>
-                      <td>{money(o.stopLoss)}</td>
-                      <td>{money(o.price)}</td>
                       <td>{money(o.marketPrice)}</td>
+                      <td>{money(o.stopLoss)}</td>
                       <td>
                         <span className={`pl ${plClass(plPercent)}`.trim()}>
                           {plPercent == null ? "—" : `${plPercent.toFixed(1)}%`}
@@ -1400,7 +1398,6 @@ function OrdersPage({
                   <td />
                   <td />
                   <td>{totalQty}</td>
-                  <td />
                   <td />
                   <td />
                   <td />
