@@ -7,7 +7,12 @@ import {
   evaluateOpenOrder,
   getConfiguredStrategyIds,
 } from '../utils/openOrderEligibility';
+import {
+  applyOrderReadyOverride,
+  getOrderReadyOverride,
+} from '../utils/orderReadyOverrides';
 import { PlaceableOrder } from '../types';
+import type { TradingMode } from '../utils/tradierConfig';
 
 export type OpenOrderExecutionResult = {
   pendingCount: number;
@@ -21,8 +26,9 @@ export async function executeOpenOrders(options: {
   signalSigmaApi: SignalSigmaApi;
   tradierApi: TradierApi;
   portfolioId: string;
+  mode: TradingMode;
 }): Promise<OpenOrderExecutionResult> {
-  const { signalSigmaApi, tradierApi, portfolioId } = options;
+  const { signalSigmaApi, tradierApi, portfolioId, mode } = options;
 
   const [{ orders }, portfolios, strategyBooks] = await Promise.all([
     signalSigmaApi.getOpenOrders(portfolioId, { bypassCache: true }),
@@ -73,18 +79,27 @@ export async function executeOpenOrders(options: {
   let skippedCount = 0;
 
   for (const order of pending) {
-    const decision = evaluateOpenOrder(
+    const autoDecision = evaluateOpenOrder(
       order,
       quotes,
       ownershipBySymbol,
       strategyLabelBySymbol
     );
+    const ready = getOrderReadyOverride(mode, order.id);
+    const decision = applyOrderReadyOverride(order, autoDecision, ready);
     if (!decision.place) {
       skippedCount += 1;
+      const overrideNote = ready === 'auto' ? '' : ` [${ready}]`;
       console.log(
-        `  SKIP ${order.direction} ${order.amount} ${order.symbol}: ${decision.reason}`
+        `  SKIP ${order.direction} ${order.amount} ${order.symbol}: ${decision.reason}${overrideNote}`
       );
       continue;
+    }
+
+    if (ready === 'force' && !autoDecision.place) {
+      console.log(
+        `  FORCE ${order.direction} ${order.amount} ${order.symbol} (was: ${autoDecision.reason})`
+      );
     }
 
     toPlace.push({

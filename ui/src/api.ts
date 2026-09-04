@@ -79,6 +79,8 @@ export interface OpenOrderRow {
   ownershipPrice: number | null;
   marketPrice: number | null;
   eligible: boolean;
+  readyOverride?: "auto" | "force" | "block";
+  autoEligible?: boolean;
   skipReason: string | null;
 }
 
@@ -270,6 +272,19 @@ export async function fetchStatus(): Promise<StatusResponse> {
 
 export async function fetchOrders(): Promise<OrdersResponse> {
   const r = await fetch(withMode("/api/orders"), { headers: authHeaders() });
+  if (!r.ok) throw new Error(await parseError(r));
+  return r.json();
+}
+
+export async function setOrderReady(
+  orderId: string,
+  ready: "auto" | "force" | "block"
+): Promise<{ orderId: string; mode: TradingMode; readyOverride: string }> {
+  const r = await fetch(withMode("/api/orders/ready"), {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ orderId, ready, mode: _tradingMode }),
+  });
   if (!r.ok) throw new Error(await parseError(r));
   return r.json();
 }

@@ -30,6 +30,12 @@ import {
   getConfiguredStrategyIds,
 } from './utils/openOrderEligibility';
 import {
+  applyOrderReadyOverride,
+  getOrderReadyOverride,
+  parseOrderReadyOverride,
+  setOrderReadyOverride,
+} from './utils/orderReadyOverrides';
+import {
   getExecutionSettings,
   isExecutionEnabled,
   setExecutionSettings,
@@ -386,11 +392,17 @@ async function buildOrders(mode: TradingMode) {
       }
 
       const enriched = pending.map((order) => {
-        const decision = evaluateOpenOrder(
+        const autoDecision = evaluateOpenOrder(
           order,
           quotes,
           ownershipBySymbol,
           strategyLabelBySymbol
+        );
+        const readyOverride = getOrderReadyOverride(mode, order.id);
+        const decision = applyOrderReadyOverride(
+          order,
+          autoDecision,
+          readyOverride
         );
         return {
           ...order,
@@ -399,7 +411,11 @@ async function buildOrders(mode: TradingMode) {
           ownershipPrice: decision.ownershipPrice,
           marketPrice: decision.marketPrice,
           eligible: decision.place,
-          skipReason: decision.place ? null : decision.reason,
+          readyOverride,
+          autoEligible: autoDecision.place,
+          skipReason: decision.place
+            ? null
+            : decision.reason,
         };
       });
 
@@ -703,6 +719,7 @@ async function runJob(kind: JobKind, mode: TradingMode): Promise<JobState> {
           signalSigmaApi,
           tradierApi,
           portfolioId,
+          mode,
         });
       }
     }
@@ -890,6 +907,27 @@ export function startUiServer(): http.Server {
       if (pathname === '/api/orders' && req.method === 'GET') {
         const mode = resolveRequestMode(req, url);
         sendJson(res, 200, await buildOrders(mode));
+        return;
+      }
+
+      if (pathname === '/api/orders/ready' && req.method === 'POST') {
+        const body = await parseBody(req);
+        const mode = resolveRequestMode(req, url, body);
+        const orderId = String(body.orderId || '').trim();
+        const ready = parseOrderReadyOverride(body.ready);
+        if (!orderId) {
+          sendJson(res, 400, { error: 'orderId is required' });
+          return;
+        }
+        if (!ready) {
+          sendJson(res, 400, {
+            error: 'ready must be auto, force/yes, or block/no',
+          });
+          return;
+        }
+        const readyOverride = setOrderReadyOverride(mode, orderId, ready);
+        deskResponseCache.invalidate(`orders:${mode}`);
+        sendJson(res, 200, { orderId, mode, readyOverride });
         return;
       }
 

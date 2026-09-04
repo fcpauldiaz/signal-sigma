@@ -93,6 +93,7 @@ export class UnifiedScheduler {
           signalSigmaApi,
           tradierApi,
           portfolioId: this.portfolioId,
+          mode: this.mode,
         });
 
         console.log(

@@ -17,6 +17,7 @@ import {
   runRebalance,
   runRebalanceAndPlace,
   setAuthToken,
+  setOrderReady,
   setTradingMode,
   updateExecution,
   type OpenOrderRow,
@@ -1228,6 +1229,19 @@ function OrdersPage({
   quotesMessage: string;
   assetFilter: AssetFilter;
 }) {
+  const qc = useQueryClient();
+  const readyMut = useMutation({
+    mutationFn: ({
+      orderId,
+      ready,
+    }: {
+      orderId: string;
+      ready: "auto" | "force" | "block";
+    }) => setOrderReady(orderId, ready),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["orders"] });
+    },
+  });
   const visible = orders.filter((o) => matchesAssetFilter(o.symbol, assetFilter));
   const eligibleCount = visible.filter((o) => o.eligible).length;
   let totalQty = 0;
@@ -1252,7 +1266,8 @@ function OrdersPage({
         <h1>Orders</h1>
         <p>
           Pending Signal Sigma instructions — BUY when market ≤ strategy
-          ownership price + 2% (Millennium Alpha / Momentum / Vision).
+          ownership price + 2% (Millennium Alpha / Momentum / Vision). Ready can
+          be forced for this server session.
         </p>
       </header>
 
@@ -1262,6 +1277,11 @@ function OrdersPage({
         <span>
           {eligibleCount} eligible / {visible.length} pending
         </span>
+        {readyMut.isError && (
+          <span className="error-msg">
+            {(readyMut.error as Error).message}
+          </span>
+        )}
       </div>
 
       <div className="table-wrap">
@@ -1295,6 +1315,10 @@ function OrdersPage({
                     o.ownershipPrice,
                     o.marketPrice
                   );
+                  const readyValue = o.readyOverride ?? "auto";
+                  const busy =
+                    readyMut.isPending &&
+                    readyMut.variables?.orderId === o.id;
                   return (
                     <tr key={o.id}>
                       <td className={o.direction === "BUY" ? "pos" : "neg"}>
@@ -1313,16 +1337,33 @@ function OrdersPage({
                       </td>
                       <td>{money(o.value)}</td>
                       <td>
-                        {o.eligible ? (
-                          <span className="status connected">yes</span>
-                        ) : (
-                          <span
-                            className="status warn"
-                            title={o.skipReason || ""}
-                          >
-                            no
-                          </span>
-                        )}
+                        <select
+                          className={`ready-select ${
+                            o.eligible ? "ready-yes" : "ready-no"
+                          }`}
+                          value={readyValue}
+                          disabled={busy}
+                          title={
+                            o.skipReason ||
+                            (o.autoEligible === false
+                              ? "Auto would skip"
+                              : undefined)
+                          }
+                          onChange={(e) => {
+                            const ready = e.target.value as
+                              | "auto"
+                              | "force"
+                              | "block";
+                            readyMut.mutate({ orderId: o.id, ready });
+                          }}
+                        >
+                          <option value="auto">
+                            auto (
+                            {(o.autoEligible ?? o.eligible) ? "yes" : "no"})
+                          </option>
+                          <option value="force">yes</option>
+                          <option value="block">no</option>
+                        </select>
                       </td>
                     </tr>
                   );

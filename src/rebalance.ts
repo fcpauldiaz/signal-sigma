@@ -54,6 +54,7 @@ async function main() {
     signalSigmaApi,
     tradierApi,
     portfolioId: signalSigmaPortfolioId,
+    mode,
   });
 
   console.log(

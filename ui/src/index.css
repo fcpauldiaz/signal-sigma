@@ -413,6 +413,20 @@ table.data tfoot td {
   color: var(--color-ink);
 }
 
+table.data .ready-select {
+  padding: 2px 6px;
+  font-size: var(--text-xs);
+  min-width: 7.5rem;
+}
+
+table.data .ready-select.ready-yes {
+  color: var(--color-positive);
+}
+
+table.data .ready-select.ready-no {
+  color: var(--color-negative);
+}
+
 .chart-wrap {
   width: 100%;
   min-width: 0;
